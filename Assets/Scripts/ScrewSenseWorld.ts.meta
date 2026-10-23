@@ -24,11 +24,25 @@
   VersionPatch: 0
   VersionPrerelease: ""
   UpdateOrder: 0
-  ComponentUid: 00000000-0000-0000-0000-000000000000
+  ComponentUid: 20918b9d-69e2-408b-8a1e-c5de4a12484c
   ExportUid: 00000000-0000-0000-0000-000000000000
   PackagePolicy: CanBeUnpacked
   ScriptInputsHidden:
-    {}
+    boxMesh: false
+    cabinetAnchor: false
+    cylinderMesh: false
+    debugColliders: false
+    dishAnchor: false
+    ghostMat: false
+    glowMat: false
+    manualAnchor: false
+    outlineReleaseRadius: false
+    panelsDraggable: false
+    partGrabPadding: false
+    pileAnchor: false
+    solidMat: false
+    trayAnchor: false
+    unlitMat: false
   ScriptTypesHidden:
     {}
   ReadMe: !<reference> 00000000-0000-0000-0000-000000000000
@@ -38,10 +52,43 @@
   Attachments:
     []
   DefaultScriptInputs:
-    -
-      {}
+    - boxMesh: !<reference.RenderMesh> 00000000-0000-0000-0000-000000000000
+      cylinderMesh: !<reference.RenderMesh> 00000000-0000-0000-0000-000000000000
+      solidMat: !<reference.Material> 00000000-0000-0000-0000-000000000000
+      unlitMat: !<reference.Material> 00000000-0000-0000-0000-000000000000
+      ghostMat: !<reference.Material> 00000000-0000-0000-0000-000000000000
+      glowMat: !<reference.Material> 00000000-0000-0000-0000-000000000000
+      pileAnchor: !<reference.SceneObject> 00000000-0000-0000-0000-000000000000
+      dishAnchor: !<reference.SceneObject> 00000000-0000-0000-0000-000000000000
+      trayAnchor: !<reference.SceneObject> 00000000-0000-0000-0000-000000000000
+      cabinetAnchor: !<reference.SceneObject> 00000000-0000-0000-0000-000000000000
+      manualAnchor: !<reference.SceneObject> 00000000-0000-0000-0000-000000000000
+      panelsDraggable: false
+      partGrabPadding: !<float> 3.000000
+      outlineReleaseRadius: !<float> 5.000000
+      debugColliders: false
   ScriptTypes:
     -
       {}
   InputLines:
-    []
+    - '// @ui {"widget":"label", "label":"<b>ScrewSense world</b>"}'
+    - '// @ui {"widget":"separator"}'
+    - '// @ui {"widget":"group_start", "label":"References"}'
+    - '// @input Asset.RenderMesh boxMesh {"hint":"Unit box mesh (the builder normalises its size)."}'
+    - '// @input Asset.RenderMesh cylinderMesh {"hint":"Unit cylinder mesh (axis along Y)."}'
+    - '// @input Asset.Material solidMat {"hint":"Lit opaque material, cloned per object and tinted."}'
+    - '// @input Asset.Material unlitMat {"hint":"Unlit opaque material (parts, labels)."}'
+    - '// @input Asset.Material ghostMat {"hint":"Unlit alpha-blended material for translucent surfaces."}'
+    - '// @input Asset.Material glowMat {"hint":"Unlit additive material for glows and outlines."}'
+    - '// @input SceneObject pileAnchor {"hint":"Origin of the flat-pack pile on the table."}'
+    - '// @input SceneObject dishAnchor {"hint":"Centre of the parts dish."}'
+    - '// @input SceneObject trayAnchor {"hint":"Outline tray (floats above the front-right edge, tilted towards the user)."}'
+    - '// @input SceneObject cabinetAnchor {"hint":"Centre of the cabinet base where the finished bedside table stands."}'
+    - '// @input SceneObject manualAnchor {"hint":"Centre of the paper manual lying on the table."}'
+    - '// @ui {"widget":"group_end"}'
+    - '// @ui {"widget":"group_start", "label":"Settings"}'
+    - '// @input bool panelsDraggable {"hint":"Let the user drag the flat panels (phase 2)."}'
+    - '// @input float partGrabPadding = 3 {"hint":"Collider padding around the tiny parts so they are easy to catch (cm)."}'
+    - "// @input float outlineReleaseRadius = 5 {\"hint\":\"Maximum distance from an outline centre that counts as 'over the outline' (cm).\"}"
+    - '// @input bool debugColliders {"hint":"Show colliders for debugging."}'
+    - '// @ui {"widget":"group_end"}'
