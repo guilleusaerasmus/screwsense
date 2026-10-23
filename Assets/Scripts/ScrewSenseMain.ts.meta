@@ -1,0 +1,70 @@
+- !<AssetImportMetadata/ff727628-c7b4-42d1-abc7-3a3be4dc8b0b>
+  ImportedAssetIds:
+    TypeScriptAsset: !<reference> 7853aefd-e6b5-41de-9df9-94d54df3782e
+  ImporterName: TypeScriptAssetImporter
+  PrimaryAsset: !<reference> 7853aefd-e6b5-41de-9df9-94d54df3782e
+  PackageType: NotAPackage
+  LegacyPackagePolicy: ~
+  ExtraData:
+    {}
+  AssetDataMap:
+    TypeScriptAsset: !<own> 939def53-741c-4818-bd4f-efc7f70d711f
+  DependentFiles:
+    []
+  ImporterSettings: !<AssetImporterSettings>
+    {}
+  CompressionSettings: !<own> 00000000-0000-0000-0000-000000000000
+- !<TypeScriptAssetData/939def53-741c-4818-bd4f-efc7f70d711f>
+  SvgIcon: ""
+  SetupScript:
+    code: ""
+  Description: ""
+  VersionMajor: 0
+  VersionMinor: 0
+  VersionPatch: 0
+  VersionPrerelease: ""
+  UpdateOrder: 0
+  ComponentUid: e5a8987c-97d5-4a31-a0b4-c10a66a23fa9
+  ExportUid: 00000000-0000-0000-0000-000000000000
+  PackagePolicy: CanBeUnpacked
+  ScriptInputsHidden:
+    autoStart: false
+    cardOffset: false
+    matchTrack: false
+    snapTrack: false
+    ui: false
+    world: false
+    wrongTrack: false
+  ScriptTypesHidden:
+    {}
+  ReadMe: !<reference> 00000000-0000-0000-0000-000000000000
+  DeclarationFile: !<reference> 00000000-0000-0000-0000-000000000000
+  Tags:
+    []
+  Attachments:
+    []
+  DefaultScriptInputs:
+    - world: !<MappingBased.AssignableType_1> 00000000-0000-0000-0000-000000000000
+      ui: !<MappingBased.AssignableType_2> 00000000-0000-0000-0000-000000000000
+      matchTrack: !<reference.AudioTrackAsset> 00000000-0000-0000-0000-000000000000
+      wrongTrack: !<reference.AudioTrackAsset> 00000000-0000-0000-0000-000000000000
+      snapTrack: !<reference.AudioTrackAsset> 00000000-0000-0000-0000-000000000000
+      autoStart: true
+      cardOffset: !<Vec3> {x: 2.000000, y: 17.000000, z: 12.000000}
+  ScriptTypes:
+    -
+      {}
+  InputLines:
+    - '// @ui {"widget":"label", "label":"<b>ScrewSense</b>"}'
+    - '// @ui {"widget":"separator"}'
+    - '// @ui {"widget":"group_start", "label":"References"}'
+    - // @input AssignableType_1 world
+    - // @input AssignableType_2 ui
+    - '// @input Asset.AudioTrackAsset matchTrack {"hint":"High tone on a right match."}'
+    - '// @input Asset.AudioTrackAsset wrongTrack {"hint":"Low tone on a wrong match."}'
+    - '// @input Asset.AudioTrackAsset snapTrack {"hint":"Soft click when something snaps into place."}'
+    - '// @ui {"widget":"group_end"}'
+    - '// @ui {"widget":"group_start", "label":"Settings"}'
+    - '// @input bool autoStart = true {"hint":"Start step 1 immediately (otherwise the user must pinch Scan)."}'
+    - '// @input vec3 cardOffset = {2,17,12} {"hint":"Where the step card hangs relative to the panel being worked on (cm)."}'
+    - '// @ui {"widget":"group_end"}'

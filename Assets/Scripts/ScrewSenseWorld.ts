@@ -1,0 +1,763 @@
+// ScrewSenseWorld: builds and animates the 3D content (table, flat-pack panels,
+// parts dish, outline tray, glowing holes). It owns no game rules: it reports
+// what the user did through events and executes visual commands from ScrewSenseMain.
+//
+// Expects: authored anchors (pile, dish, tray, cabinet, manual) as children of this
+// object with identity rotation/scale (the tray may be tilted).
+// Must not: decide whether a match is right or wrong.
+
+import {Interactable} from "SpectaclesInteractionKit.lspkg/Components/Interaction/Interactable/Interactable"
+import {InteractableManipulation} from "SpectaclesInteractionKit.lspkg/Components/Interaction/InteractableManipulation/InteractableManipulation"
+import Event from "SpectaclesInteractionKit.lspkg/Utils/Event"
+import {
+  COLORS,
+  PANELS,
+  PARTS,
+  PanelDef,
+  PanelId,
+  PartDef,
+  PartId,
+  clamp01,
+  easeInOut,
+  eulerDeg,
+  panelDef,
+  partDef
+} from "./ScrewSenseConfig"
+
+export type OutlineState = "neutral" | "match" | "wrong" | "hint"
+
+interface Tween {
+  key: string
+  t: number
+  dur: number
+  delay: number
+  update: (k: number) => void
+  done?: () => void
+}
+
+interface PanelRt {
+  def: PanelDef
+  root: SceneObject
+  visual: SceneObject
+  body: RenderMeshVisual
+  finish: RenderMeshVisual
+  holes: SceneObject[]
+  flipped: boolean
+  assembled: boolean
+  solidFinal: boolean
+}
+
+interface PartRt {
+  def: PartDef
+  root: SceneObject
+  home: vec3
+  interactable: Interactable
+  visuals: RenderMeshVisual[]
+  dragging: boolean
+}
+
+interface OutlineRt {
+  id: PartId
+  root: SceneObject
+  pad: RenderMeshVisual
+  frame: RenderMeshVisual[]
+  fill: RenderMeshVisual[]
+  basePos: vec3
+  state: OutlineState
+}
+
+@component
+export class ScrewSenseWorld extends BaseScriptComponent {
+  @ui.label("<b>ScrewSense world</b>")
+  @ui.separator
+  @ui.group_start("References")
+  @input
+  @hint("Unit box mesh (the builder normalises its size).")
+  boxMesh: RenderMesh
+  @input
+  @hint("Unit cylinder mesh (axis along Y).")
+  cylinderMesh: RenderMesh
+  @input
+  @hint("Lit opaque material, cloned per object and tinted.")
+  solidMat: Material
+  @input
+  @hint("Unlit opaque material (parts, labels).")
+  unlitMat: Material
+  @input
+  @hint("Unlit alpha-blended material for translucent surfaces.")
+  ghostMat: Material
+  @input
+  @hint("Unlit additive material for glows and outlines.")
+  glowMat: Material
+  @input
+  @hint("Origin of the flat-pack pile on the table.")
+  pileAnchor: SceneObject
+  @input
+  @hint("Centre of the parts dish.")
+  dishAnchor: SceneObject
+  @input
+  @hint("Outline tray (floats above the front-right edge, tilted towards the user).")
+  trayAnchor: SceneObject
+  @input
+  @hint("Centre of the cabinet base where the finished bedside table stands.")
+  cabinetAnchor: SceneObject
+  @input
+  @hint("Centre of the paper manual lying on the table.")
+  manualAnchor: SceneObject
+  @ui.group_end
+  @ui.group_start("Settings")
+  @input
+  @hint("Let the user drag the flat panels (phase 2).")
+  panelsDraggable: boolean = false
+  @input
+  @hint("Collider padding around the tiny parts so they are easy to catch (cm).")
+  partGrabPadding: number = 3
+  @input
+  @hint("Maximum distance from an outline centre that counts as 'over the outline' (cm).")
+  outlineReleaseRadius: number = 5
+  @input
+  @hint("Show colliders for debugging.")
+  debugColliders: boolean = false
+  @ui.group_end
+
+  // Events -------------------------------------------------------------
+  readonly onPartGrabbed = new Event<PartId>()
+  readonly onPartReleased = new Event<{partId: PartId; outlineId: PartId | null}>()
+
+  private root: SceneObject
+  private unit: {[k: string]: vec3} = {}
+  private tweens: Tween[] = []
+  private time = 0
+
+  private panels: {[id: string]: PanelRt} = {}
+  private parts: {[id: string]: PartRt} = {}
+  private outlines: {[id: string]: OutlineRt} = {}
+  private trayRoot: SceneObject
+  private tableRoot: SceneObject
+  private holePulse: SceneObject[] = []
+  private built = false
+
+  onAwake(): void {
+    this.root = this.sceneObject
+    this.build()
+    this.createEvent("OnStartEvent").bind(() => this.bindInteractions())
+    this.createEvent("UpdateEvent").bind(() => this.onUpdate())
+  }
+
+  // ------------------------------------------------------------------ build
+  private build(): void {
+    this.computeUnits()
+    this.buildTable()
+    this.buildDish()
+    this.buildTray()
+    for (const def of PARTS) this.buildPart(def)
+    for (const def of PANELS) this.buildPanel(def)
+    this.resetPanels(false)
+    this.resetParts(false)
+    this.setTrayVisible(false)
+    this.built = true
+  }
+
+  private computeUnits(): void {
+    const m = (mesh: RenderMesh): vec3 => {
+      const a = mesh.aabbMin
+      const b = mesh.aabbMax
+      return new vec3(1 / Math.max(0.0001, b.x - a.x), 1 / Math.max(0.0001, b.y - a.y), 1 / Math.max(0.0001, b.z - a.z))
+    }
+    this.unit["box"] = m(this.boxMesh)
+    this.unit["cyl"] = m(this.cylinderMesh)
+  }
+
+  /** Create a mesh primitive of an exact size in cm. Cylinder size = (diameter, height, diameter). */
+  prim(
+    parent: SceneObject,
+    name: string,
+    kind: "box" | "cyl",
+    size: vec3,
+    pos: vec3,
+    color: vec4,
+    mat: Material,
+    rot?: quat
+  ): RenderMeshVisual {
+    const obj = global.scene.createSceneObject(name)
+    obj.setParent(parent)
+    const tr = obj.getTransform()
+    tr.setLocalPosition(pos)
+    if (rot) tr.setLocalRotation(rot)
+    const u = this.unit[kind]
+    tr.setLocalScale(new vec3(size.x * u.x, size.y * u.y, size.z * u.z))
+    const rmv = obj.createComponent("Component.RenderMeshVisual") as RenderMeshVisual
+    rmv.mesh = kind === "box" ? this.boxMesh : this.cylinderMesh
+    const clone = mat.clone()
+    clone.mainPass.baseColor = color
+    rmv.mainMaterial = clone
+    return rmv
+  }
+
+  static tint(rmv: RenderMeshVisual, color: vec4): void {
+    rmv.mainMaterial.mainPass.baseColor = color
+  }
+
+  private addCollider(obj: SceneObject, size: vec3): void {
+    const col = obj.createComponent("Physics.ColliderComponent") as ColliderComponent
+    const shape = Shape.createBoxShape()
+    shape.size = size
+    col.shape = shape
+    col.debugDrawEnabled = this.debugColliders
+  }
+
+  private buildTable(): void {
+    this.tableRoot = global.scene.createSceneObject("Table")
+    this.tableRoot.setParent(this.root)
+    // 120 x 60 cm top, 75 cm high; origin of the world root is the top surface centre.
+    this.prim(this.tableRoot, "Top", "box", new vec3(120, 4, 60), new vec3(0, -2, 0), COLORS.table, this.solidMat)
+    const legSize = new vec3(5, 71, 5)
+    const lx = 55
+    const lz = 25
+    for (const sx of [-1, 1]) {
+      for (const sz of [-1, 1]) {
+        this.prim(
+          this.tableRoot,
+          "Leg",
+          "box",
+          legSize,
+          new vec3(sx * lx, -4 - 35.5, sz * lz),
+          COLORS.tableLeg,
+          this.solidMat
+        )
+      }
+    }
+  }
+
+  private buildDish(): void {
+    const c = this.localPos(this.dishAnchor)
+    this.prim(this.tableRoot, "Dish", "cyl", new vec3(17, 1.0, 17), c.add(new vec3(0, 0.5, 0)), COLORS.dish, this.solidMat)
+  }
+
+  // ------------------------------------------------------------------ parts
+  private buildPart(def: PartDef): void {
+    const root = global.scene.createSceneObject("Part" + def.id)
+    root.setParent(this.root)
+    const index = PARTS.indexOf(def)
+    const dish = this.localPos(this.dishAnchor)
+    const home = dish.add(new vec3((index - 1) * 5.2, 2.3, 0))
+    root.getTransform().setLocalPosition(home)
+
+    const visuals: RenderMeshVisual[] = []
+    const alongX = eulerDeg(0, 0, 90)
+    // Shank: cylinder along X, starting at the head end.
+    visuals.push(
+      this.prim(
+        root,
+        "Shank",
+        "cyl",
+        new vec3(def.radius * 2, def.length, def.radius * 2),
+        new vec3(def.headLength / 2, 0, 0),
+        def.color,
+        this.unlitMat,
+        alongX
+      )
+    )
+    if (def.headRadius > 0) {
+      visuals.push(
+        this.prim(
+          root,
+          "Head",
+          "cyl",
+          new vec3(def.headRadius * 2, def.headLength, def.headRadius * 2),
+          new vec3(-def.length / 2 + def.headLength / 2 - 0.05, 0, 0),
+          def.color,
+          this.unlitMat,
+          alongX
+        )
+      )
+    }
+
+    const pad = this.partGrabPadding
+    this.addCollider(root, new vec3(def.length + pad, 2.2 + pad, 2.2 + pad))
+    const interactable = root.createComponent(Interactable.getTypeName()) as Interactable
+    interactable.targetingMode = 3
+    const manip = root.createComponent(InteractableManipulation.getTypeName()) as InteractableManipulation
+    manip.setCanRotate(false)
+    manip.setCanScale(false)
+
+    this.parts[def.id] = {def, root, home, interactable, visuals, dragging: false}
+  }
+
+  // ------------------------------------------------------------------ tray
+  private buildTray(): void {
+    this.trayRoot = global.scene.createSceneObject("TrayContent")
+    this.trayRoot.setParent(this.trayAnchor)
+    this.prim(this.trayRoot, "TrayPlate", "box", new vec3(34, 0.4, 14), new vec3(0, 0, 0), COLORS.tray, this.ghostMat)
+
+    const xs = [-11, 0, 11]
+    for (let i = 0; i < PARTS.length; i++) {
+      const def = PARTS[i]
+      const root = global.scene.createSceneObject("Outline" + def.id)
+      root.setParent(this.trayRoot)
+      const basePos = new vec3(xs[i], 0.3, 1.2)
+      root.getTransform().setLocalPosition(basePos)
+
+      const pad = this.prim(
+        root,
+        "Pad",
+        "cyl",
+        new vec3(8, 0.1, 8),
+        new vec3(0, 0, 0),
+        COLORS.outlineFill,
+        this.ghostMat
+      )
+      const frame: RenderMeshVisual[] = []
+      const fill: RenderMeshVisual[] = []
+      // Real-size silhouette of the part: shank + head, drawn as hollow frames.
+      this.addFrame(root, frame, new vec3(0.25, 0.2, 0), def.length + 0.5, def.radius * 2 + 0.5)
+      if (def.headRadius > 0) {
+        this.addFrame(
+          root,
+          frame,
+          new vec3(-def.length / 2 - 0.05, 0.2, 0),
+          def.headLength + 0.5,
+          def.headRadius * 2 + 0.5
+        )
+      }
+      fill.push(
+        this.prim(
+          root,
+          "Silhouette",
+          "box",
+          new vec3(def.length + 0.25, 0.1, def.radius * 2),
+          new vec3(0.1, 0.12, 0),
+          COLORS.outline,
+          this.glowMat
+        )
+      )
+
+      this.buildLabel(root, def.label, new vec3(0, 0.3, 5.6))
+      this.outlines[def.id] = {id: def.id, root, pad, frame, fill, basePos, state: "neutral"}
+    }
+  }
+
+  private addFrame(parent: SceneObject, list: RenderMeshVisual[], center: vec3, w: number, h: number): void {
+    const t = 0.14
+    const y = center.y
+    list.push(this.prim(parent, "BarT", "box", new vec3(w, 0.1, t), new vec3(center.x, y, center.z - h / 2), COLORS.outline, this.glowMat))
+    list.push(this.prim(parent, "BarB", "box", new vec3(w, 0.1, t), new vec3(center.x, y, center.z + h / 2), COLORS.outline, this.glowMat))
+    list.push(this.prim(parent, "BarL", "box", new vec3(t, 0.1, h), new vec3(center.x - w / 2, y, center.z), COLORS.outline, this.glowMat))
+    list.push(this.prim(parent, "BarR", "box", new vec3(t, 0.1, h), new vec3(center.x + w / 2, y, center.z), COLORS.outline, this.glowMat))
+  }
+
+  private buildLabel(parent: SceneObject, text: string, pos: vec3): void {
+    const obj = global.scene.createSceneObject("Label")
+    obj.setParent(parent)
+    // Lie flat on the tray, readable from the front (+Z) side.
+    obj.getTransform().setLocalPosition(pos)
+    obj.getTransform().setLocalRotation(eulerDeg(-90, 0, 0))
+    const t = obj.createComponent("Component.Text") as Text
+    t.text = text
+    t.size = 70
+    t.depthTest = true
+    t.horizontalAlignment = HorizontalAlignment.Center
+    t.verticalAlignment = VerticalAlignment.Center
+    t.horizontalOverflow = HorizontalOverflow.Overflow
+    t.verticalOverflow = VerticalOverflow.Overflow
+    t.layoutRect = Rect.create(-5, 5, -1.2, 1.2)
+    ;(t as Text & {weight?: number}).weight = 700
+  }
+
+  // ------------------------------------------------------------------ panels
+  private buildPanel(def: PanelDef): void {
+    const root = global.scene.createSceneObject("Panel_" + def.id)
+    root.setParent(this.root)
+    const visual = global.scene.createSceneObject("Visual")
+    visual.setParent(root)
+    const body = this.prim(visual, "Body", "box", def.size, new vec3(0, 0, 0), COLORS.panelRaw, this.solidMat)
+    const finish = this.prim(
+      visual,
+      "Finish",
+      "box",
+      new vec3(def.size.x - 0.3, 0.14, def.size.z - 0.3),
+      new vec3(0, def.size.y / 2 + 0.05, 0),
+      COLORS.panelFinish,
+      this.solidMat
+    )
+    // Generous collider: at least 3 cm thick so a thin panel is easy to hit.
+    this.addCollider(root, new vec3(def.size.x, Math.max(3, def.size.y + 1.2), def.size.z))
+    if (this.panelsDraggable) {
+      const interactable = root.createComponent(Interactable.getTypeName()) as Interactable
+      interactable.targetingMode = 3
+      const manip = root.createComponent(InteractableManipulation.getTypeName()) as InteractableManipulation
+      manip.setCanRotate(false)
+      manip.setCanScale(false)
+    }
+
+    // Glowing holes for the part this panel receives.
+    const holes: SceneObject[] = []
+    for (const key in def.holes) {
+      for (const h of def.holes[key]) {
+        const hole = this.prim(
+          root,
+          "Hole_" + key,
+          "cyl",
+          new vec3(1.3, 0.12, 1.3),
+          new vec3(h.x, def.size.y / 2 + 0.15, h.y),
+          COLORS.hole,
+          this.glowMat
+        )
+        hole.sceneObject.enabled = false
+        holes.push(hole.sceneObject)
+      }
+    }
+
+    const rt: PanelRt = {def, root, visual, body, finish, holes, flipped: def.startsFlipped, assembled: false, solidFinal: false}
+    this.panels[def.id] = rt
+    this.applyFlip(rt)
+  }
+
+  private applyFlip(p: PanelRt): void {
+    p.visual.getTransform().setLocalRotation(p.flipped ? eulerDeg(180, 0, 0) : quat.quatIdentity())
+  }
+
+  // ------------------------------------------------------------------ poses
+  private localPos(anchor: SceneObject): vec3 {
+    return anchor.getTransform().getLocalPosition()
+  }
+
+  private pilePose(def: PanelDef): {pos: vec3; rot: quat} {
+    return {pos: this.localPos(this.pileAnchor).add(def.pilePos), rot: eulerDeg(0, def.pileYawDeg, 0)}
+  }
+
+  private assembledPose(def: PanelDef): {pos: vec3; rot: quat} {
+    const e = def.assembledEuler
+    return {pos: this.localPos(this.cabinetAnchor).add(def.assembledPos), rot: eulerDeg(e.x, e.y, e.z)}
+  }
+
+  private setPose(p: PanelRt, pos: vec3, rot: quat): void {
+    const tr = p.root.getTransform()
+    tr.setLocalPosition(pos)
+    tr.setLocalRotation(rot)
+  }
+
+  // ------------------------------------------------------------------ tweens
+  tween(key: string, dur: number, update: (k: number) => void, done?: () => void, delay: number = 0): void {
+    this.tweens = this.tweens.filter((t) => t.key !== key)
+    this.tweens.push({key, t: 0, dur: Math.max(0.001, dur), delay, update, done})
+  }
+
+  cancelTween(key: string): void {
+    this.tweens = this.tweens.filter((t) => t.key !== key)
+  }
+
+  private onUpdate(): void {
+    const dt = getDeltaTime()
+    this.time += dt
+    const finished: Tween[] = []
+    for (const tw of this.tweens.slice()) {
+      if (tw.delay > 0) {
+        tw.delay -= dt
+        continue
+      }
+      tw.t += dt
+      const k = clamp01(tw.t / tw.dur)
+      tw.update(k)
+      if (k >= 1) finished.push(tw)
+    }
+    if (finished.length > 0) {
+      this.tweens = this.tweens.filter((t) => finished.indexOf(t) < 0)
+      for (const tw of finished) if (tw.done) tw.done()
+    }
+    this.pulseHoles()
+    this.pulseHints()
+  }
+
+  private pulseHoles(): void {
+    const s = 1 + 0.25 * Math.sin(this.time * 6)
+    for (const key in this.panels) {
+      for (const h of this.panels[key].holes) {
+        if (h.enabled) {
+          const base = h.getTransform().getLocalScale()
+          // Keep scale uniform pulse relative to authored scale stored in name-less cache.
+          const u = this.unit["cyl"]
+          h.getTransform().setLocalScale(new vec3(1.3 * s * u.x, 0.12 * u.y, 1.3 * s * u.z))
+          void base
+        }
+      }
+    }
+  }
+
+  private pulseHints(): void {
+    const k = 0.5 + 0.5 * Math.sin(this.time * 7)
+    for (const id in this.outlines) {
+      const o = this.outlines[id]
+      if (o.state === "hint") this.tintOutline(o, this.mix(COLORS.hint, COLORS.outline, k))
+    }
+  }
+
+  private mix(a: vec4, b: vec4, k: number): vec4 {
+    return new vec4(a.x + (b.x - a.x) * k, a.y + (b.y - a.y) * k, a.z + (b.z - a.z) * k, a.w + (b.w - a.w) * k)
+  }
+
+  // ------------------------------------------------------------------ interaction
+  private bindInteractions(): void {
+    for (const id in this.parts) {
+      const p = this.parts[id]
+      const manip = p.root.getComponent(InteractableManipulation.getTypeName()) as InteractableManipulation
+      p.interactable.onTriggerStart.add(() => {
+        p.dragging = true
+        this.cancelTween("part-" + id)
+        this.onPartGrabbed.invoke(p.def.id)
+      })
+      manip.onManipulationEnd.add(() => this.partReleased(p))
+      p.interactable.onTriggerEnd.add(() => {
+        // Safety net: a release without manipulation (a plain click) also resolves.
+        if (p.dragging) this.partReleased(p)
+      })
+    }
+  }
+
+  private partReleased(p: PartRt): void {
+    if (!p.dragging) return
+    p.dragging = false
+    this.onPartReleased.invoke({partId: p.def.id, outlineId: this.outlineUnder(p)})
+  }
+
+  /** Nearest visible outline within the release radius of the part, or null. */
+  outlineUnder(p: PartRt): PartId | null {
+    if (!this.trayRoot.enabled) return null
+    const pos = p.root.getTransform().getWorldPosition()
+    let best: PartId | null = null
+    let bestD = this.outlineReleaseRadius
+    for (const id in this.outlines) {
+      const d = this.outlines[id].root.getTransform().getWorldPosition().distance(pos)
+      if (d <= bestD) {
+        bestD = d
+        best = id as PartId
+      }
+    }
+    return best
+  }
+
+  // ------------------------------------------------------------------ commands
+  setTrayVisible(v: boolean): void {
+    this.trayRoot.enabled = v
+    if (v) {
+      for (const id in this.outlines) this.setOutlineState(id as PartId, "neutral")
+    }
+  }
+
+  isTrayVisible(): boolean {
+    return this.trayRoot.enabled
+  }
+
+  setOutlineState(id: PartId, state: OutlineState): void {
+    const o = this.outlines[id]
+    o.state = state
+    if (state === "hint") return
+    const c = state === "match" ? COLORS.match : state === "wrong" ? COLORS.wrong : COLORS.outline
+    this.tintOutline(o, c)
+  }
+
+  getOutlineState(id: PartId): OutlineState {
+    return this.outlines[id].state
+  }
+
+  private tintOutline(o: OutlineRt, c: vec4): void {
+    for (const r of o.frame) ScrewSenseWorld.tint(r, c)
+    for (const r of o.fill) ScrewSenseWorld.tint(r, c)
+    ScrewSenseWorld.tint(o.pad, new vec4(c.x, c.y, c.z, 0.3))
+  }
+
+  shakeOutline(id: PartId): void {
+    const o = this.outlines[id]
+    this.tween("shake-" + id, 0.6, (k) => {
+      const dx = Math.sin(k * 40) * 0.7 * (1 - k)
+      o.root.getTransform().setLocalPosition(o.basePos.add(new vec3(dx, 0, 0)))
+    }, () => o.root.getTransform().setLocalPosition(o.basePos))
+  }
+
+  /** World position of an outline centre. */
+  outlineWorldPos(id: PartId): vec3 {
+    return this.outlines[id].root.getTransform().getWorldPosition()
+  }
+
+  /** Move a released part into its outline. */
+  snapPartIntoOutline(id: PartId, done?: () => void): void {
+    const p = this.parts[id]
+    const o = this.outlines[id]
+    const tr = p.root.getTransform()
+    const from = tr.getWorldPosition()
+    const fromRot = tr.getWorldRotation()
+    const to = o.root.getTransform().getWorldPosition().add(this.trayAnchor.getTransform().up.uniformScale(0.5))
+    const toRot = this.trayAnchor.getTransform().getWorldRotation()
+    this.tween("part-" + id, 0.18, (k) => {
+      const e = easeInOut(k)
+      tr.setWorldPosition(vec3.lerp(from, to, e))
+      tr.setWorldRotation(quat.slerp(fromRot, toRot, e))
+    }, done)
+  }
+
+  returnPartHome(id: PartId, done?: () => void): void {
+    const p = this.parts[id]
+    const tr = p.root.getTransform()
+    const from = tr.getLocalPosition()
+    const fromRot = tr.getLocalRotation()
+    this.tween("part-" + id, 0.25, (k) => {
+      const e = easeInOut(k)
+      tr.setLocalPosition(vec3.lerp(from, p.home, e))
+      tr.setLocalRotation(quat.slerp(fromRot, quat.quatIdentity(), e))
+    }, done)
+  }
+
+  setPartVisible(id: PartId, v: boolean): void {
+    this.parts[id].root.enabled = v
+  }
+
+  resetParts(animate: boolean): void {
+    for (const id in this.parts) {
+      const p = this.parts[id]
+      p.dragging = false
+      p.root.enabled = true
+      if (animate) {
+        this.returnPartHome(id as PartId)
+      } else {
+        this.cancelTween("part-" + id)
+        p.root.getTransform().setLocalPosition(p.home)
+        p.root.getTransform().setLocalRotation(quat.quatIdentity())
+      }
+    }
+  }
+
+  /** Glowing holes on the panels that receive `part`. */
+  glowHoles(panelIds: PanelId[], part: PartId): void {
+    this.clearHoles()
+    for (const pid of panelIds) {
+      const p = this.panels[pid]
+      for (const h of p.holes) h.enabled = h.name === "Hole_" + part
+    }
+  }
+
+  clearHoles(): void {
+    for (const k in this.panels) for (const h of this.panels[k].holes) h.enabled = false
+  }
+
+  holesGlowing(panelId: PanelId): boolean {
+    return this.panels[panelId].holes.some((h) => h.enabled)
+  }
+
+  /** Animate panels from where they are to the assembled pose in the cabinet. */
+  assemblePanels(ids: PanelId[], done?: () => void): void {
+    let remaining = ids.length
+    ids.forEach((id, i) => {
+      const p = this.panels[id]
+      const tr = p.root.getTransform()
+      const from = tr.getLocalPosition()
+      const fromRot = tr.getLocalRotation()
+      const target = this.assembledPose(p.def)
+      p.assembled = true
+      p.flipped = false
+      this.applyFlip(p)
+      this.tween("panel-" + id, 0.8, (k) => {
+        const e = easeInOut(k)
+        tr.setLocalPosition(vec3.lerp(from, target.pos, e))
+        tr.setLocalRotation(quat.slerp(fromRot, target.rot, e))
+      }, () => {
+        remaining--
+        if (remaining === 0 && done) done()
+      }, i * 0.15)
+    })
+    if (ids.length === 0 && done) done()
+  }
+
+  /** Send panels back to the pile (undo). */
+  disassemblePanels(ids: PanelId[], done?: () => void): void {
+    let remaining = ids.length
+    ids.forEach((id, i) => {
+      const p = this.panels[id]
+      const tr = p.root.getTransform()
+      const from = tr.getLocalPosition()
+      const fromRot = tr.getLocalRotation()
+      const target = this.pilePose(p.def)
+      p.assembled = false
+      p.flipped = p.def.startsFlipped
+      this.applyFlip(p)
+      this.setSolidFinal(id, false)
+      this.tween("panel-" + id, 0.6, (k) => {
+        const e = easeInOut(k)
+        tr.setLocalPosition(vec3.lerp(from, target.pos, e))
+        tr.setLocalRotation(quat.slerp(fromRot, target.rot, e))
+      }, () => {
+        remaining--
+        if (remaining === 0 && done) done()
+      }, i * 0.1)
+    })
+    if (ids.length === 0 && done) done()
+  }
+
+  resetPanels(animate: boolean): void {
+    const ids = PANELS.map((d) => d.id)
+    if (animate) {
+      this.disassemblePanels(ids)
+      return
+    }
+    for (const id of ids) {
+      const p = this.panels[id]
+      const pose = this.pilePose(p.def)
+      this.cancelTween("panel-" + id)
+      this.setPose(p, pose.pos, pose.rot)
+      p.assembled = false
+      p.flipped = p.def.startsFlipped
+      this.applyFlip(p)
+      this.setSolidFinal(id, false)
+    }
+    this.clearHoles()
+  }
+
+  /** Switch panels to the solid finished look (or back). */
+  setSolidFinal(id: PanelId, solid: boolean): void {
+    const p = this.panels[id]
+    p.solidFinal = solid
+    ScrewSenseWorld.tint(p.body, solid ? COLORS.panelFinal : COLORS.panelRaw)
+    p.finish.sceneObject.enabled = !solid
+  }
+
+  setAllSolidFinal(solid: boolean): void {
+    for (const id in this.panels) this.setSolidFinal(id as PanelId, solid)
+  }
+
+  // ------------------------------------------------------------------ queries (also used by tests)
+  panelWorldPos(id: PanelId): vec3 {
+    return this.panels[id].root.getTransform().getWorldPosition()
+  }
+
+  panelAssembledWorldPos(id: PanelId): vec3 {
+    const p = this.assembledPose(panelDef(id))
+    return this.root.getTransform().getWorldTransform().multiplyPoint(p.pos)
+  }
+
+  panelIsAssembled(id: PanelId): boolean {
+    return this.panels[id].assembled
+  }
+
+  panelIsFlipped(id: PanelId): boolean {
+    return this.panels[id].flipped
+  }
+
+  partWorldPos(id: PartId): vec3 {
+    return this.parts[id].root.getTransform().getWorldPosition()
+  }
+
+  partHomeWorldPos(id: PartId): vec3 {
+    return this.root.getTransform().getWorldTransform().multiplyPoint(this.parts[id].home)
+  }
+
+  cabinetWorldCenter(): vec3 {
+    return this.cabinetAnchor.getTransform().getWorldPosition().add(new vec3(0, 25, 0))
+  }
+
+  isBuilt(): boolean {
+    return this.built
+  }
+
+  partDefOf(id: PartId): PartDef {
+    return partDef(id)
+  }
+}

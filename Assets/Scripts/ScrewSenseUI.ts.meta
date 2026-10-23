@@ -1,0 +1,70 @@
+- !<AssetImportMetadata/5a8595c9-1d8c-4132-abb4-9a32551b997d>
+  ImportedAssetIds:
+    TypeScriptAsset: !<reference> 88d8d856-8489-46eb-be00-11d459051620
+  ImporterName: TypeScriptAssetImporter
+  PrimaryAsset: !<reference> 88d8d856-8489-46eb-be00-11d459051620
+  PackageType: NotAPackage
+  LegacyPackagePolicy: ~
+  ExtraData:
+    {}
+  AssetDataMap:
+    TypeScriptAsset: !<own> 60b9a079-e54a-4d84-8ff2-3e02757d3bbd
+  DependentFiles:
+    []
+  ImporterSettings: !<AssetImporterSettings>
+    {}
+  CompressionSettings: !<own> 00000000-0000-0000-0000-000000000000
+- !<TypeScriptAssetData/60b9a079-e54a-4d84-8ff2-3e02757d3bbd>
+  SvgIcon: ""
+  SetupScript:
+    code: ""
+  Description: ""
+  VersionMajor: 0
+  VersionMinor: 0
+  VersionPatch: 0
+  VersionPrerelease: ""
+  UpdateOrder: 0
+  ComponentUid: 6d9b704a-5f09-4777-9789-39a98f4836c0
+  ExportUid: 00000000-0000-0000-0000-000000000000
+  PackagePolicy: CanBeUnpacked
+  ScriptInputsHidden:
+    backAnchor: false
+    backWidth: false
+    cardAnchor: false
+    cardWidth: false
+    doneAnchor: false
+    doneSize: false
+    messageAnchor: false
+  ScriptTypesHidden:
+    {}
+  ReadMe: !<reference> 00000000-0000-0000-0000-000000000000
+  DeclarationFile: !<reference> 00000000-0000-0000-0000-000000000000
+  Tags:
+    []
+  Attachments:
+    []
+  DefaultScriptInputs:
+    - cardAnchor: !<reference.SceneObject> 00000000-0000-0000-0000-000000000000
+      doneAnchor: !<reference.SceneObject> 00000000-0000-0000-0000-000000000000
+      backAnchor: !<reference.SceneObject> 00000000-0000-0000-0000-000000000000
+      messageAnchor: !<reference.SceneObject> 00000000-0000-0000-0000-000000000000
+      cardWidth: !<float> 18.000000
+      doneSize: !<float> 8.000000
+      backWidth: !<float> 6.000000
+  ScriptTypes:
+    -
+      {}
+  InputLines:
+    - '// @ui {"widget":"label", "label":"<b>ScrewSense UI</b>"}'
+    - '// @ui {"widget":"separator"}'
+    - '// @ui {"widget":"group_start", "label":"Anchors"}'
+    - '// @input SceneObject cardAnchor {"hint":"Where the step card hangs (moved at runtime next to the panel being worked on)."}'
+    - '// @input SceneObject doneAnchor {"hint":"Where the big round Done button sits."}'
+    - '// @input SceneObject backAnchor {"hint":"Where the smaller Back button sits."}'
+    - "// @input SceneObject messageAnchor {\"hint\":\"Where the 'Assembled!' message floats.\"}"
+    - '// @ui {"widget":"group_end"}'
+    - '// @ui {"widget":"group_start", "label":"Settings"}'
+    - '// @input float cardWidth = 18 {"hint":"Step card width (cm)."}'
+    - '// @input float doneSize = 8 {"hint":"Diameter of the Done button (cm)."}'
+    - '// @input float backWidth = 6 {"hint":"Width of the Back button (cm)."}'
+    - '// @ui {"widget":"group_end"}'

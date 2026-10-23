@@ -14,3 +14,6 @@ Workspaces/
 PluginsUserPreferences/
 *.lock
 agent/
+
+# Added by Lens Studio (LEAF plugin)
+leaf_plugin_settings.json
