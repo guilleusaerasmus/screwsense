@@ -13,6 +13,7 @@ export class ScrewSenseP1MatchScenario extends Scenario {
     const ix = new ScrewSenseLeafInteractor()
     await begin(ix)
     const world = sys().world
+    const matchBefore = sys().playCount("match")
 
     expect(world.isTrayVisible()).toBe(true)
     expect(world.holesGlowing("sideL")).toBe(false)
@@ -25,7 +26,7 @@ export class ScrewSenseP1MatchScenario extends Scenario {
     expect(world.holesGlowing("sideL")).toBe(true)
     expect(world.holesGlowing("sideR")).toBe(true)
     expect(world.holesGlowing("bottom")).toBe(false)
-    expect(sys().audio["match"].isPlaying()).toBe(true)
+    expect(sys().playCount("match")).toBe(matchBefore + 1)
     expect(sys().getPhase()).toBe("place")
     await sleep(1000)
     expect(world.isTrayVisible()).toBe(false)

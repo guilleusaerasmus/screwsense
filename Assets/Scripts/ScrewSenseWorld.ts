@@ -42,9 +42,19 @@ interface PanelRt {
   body: RenderMeshVisual
   finish: RenderMeshVisual
   holes: SceneObject[]
+  redEdge: SceneObject
+  interactable: Interactable | null
+  dragging: boolean
   flipped: boolean
   assembled: boolean
   solidFinal: boolean
+}
+
+interface SlotRt {
+  root: SceneObject
+  ghost: RenderMeshVisual
+  edges: RenderMeshVisual[]
+  active: boolean
 }
 
 interface PartRt {
@@ -123,6 +133,9 @@ export class ScrewSenseWorld extends BaseScriptComponent {
   // Events -------------------------------------------------------------
   readonly onPartGrabbed = new Event<PartId>()
   readonly onPartReleased = new Event<{partId: PartId; outlineId: PartId | null}>()
+  readonly onPanelGrabbed = new Event<PanelId>()
+  // slotDistance: distance in cm between the released panel and its hologram slot.
+  readonly onPanelReleased = new Event<{panelId: PanelId; slotDistance: number}>()
 
   private root: SceneObject
   private unit: {[k: string]: vec3} = {}
@@ -130,6 +143,8 @@ export class ScrewSenseWorld extends BaseScriptComponent {
   private time = 0
 
   private panels: {[id: string]: PanelRt} = {}
+  private slots: {[id: string]: SlotRt} = {}
+  private hologramVisible = false
   private parts: {[id: string]: PartRt} = {}
   private outlines: {[id: string]: OutlineRt} = {}
   private trayRoot: SceneObject
@@ -140,7 +155,10 @@ export class ScrewSenseWorld extends BaseScriptComponent {
   onAwake(): void {
     this.root = this.sceneObject
     this.build()
-    this.createEvent("OnStartEvent").bind(() => this.bindInteractions())
+    this.createEvent("OnStartEvent").bind(() => {
+      this.bindInteractions()
+      this.bindPanelInteractions()
+    })
     this.createEvent("UpdateEvent").bind(() => this.onUpdate())
   }
 
@@ -152,6 +170,7 @@ export class ScrewSenseWorld extends BaseScriptComponent {
     this.buildTray()
     for (const def of PARTS) this.buildPart(def)
     for (const def of PANELS) this.buildPanel(def)
+    for (const def of PANELS) this.buildSlot(def)
     this.resetPanels(false)
     this.resetParts(false)
     this.setTrayVisible(false)
@@ -209,11 +228,12 @@ export class ScrewSenseWorld extends BaseScriptComponent {
   private buildTable(): void {
     this.tableRoot = global.scene.createSceneObject("Table")
     this.tableRoot.setParent(this.root)
-    // 120 x 60 cm top, 75 cm high; origin of the world root is the top surface centre.
-    this.prim(this.tableRoot, "Top", "box", new vec3(120, 4, 60), new vec3(0, -2, 0), COLORS.table, this.solidMat)
+    // 160 x 100 cm top, 75 cm high (wide enough to lay all five panels flat on the left
+    // half); origin of the world root is the top surface centre.
+    this.prim(this.tableRoot, "Top", "box", new vec3(160, 4, 100), new vec3(0, -2, 0), COLORS.table, this.solidMat)
     const legSize = new vec3(5, 71, 5)
-    const lx = 55
-    const lz = 25
+    const lx = 75
+    const lz = 45
     for (const sx of [-1, 1]) {
       for (const sz of [-1, 1]) {
         this.prim(
@@ -382,13 +402,20 @@ export class ScrewSenseWorld extends BaseScriptComponent {
     )
     // Generous collider: at least 3 cm thick so a thin panel is easy to hit.
     this.addCollider(root, new vec3(def.size.x, Math.max(3, def.size.y + 1.2), def.size.z))
+    let panelInteractable: Interactable | null = null
     if (this.panelsDraggable) {
-      const interactable = root.createComponent(Interactable.getTypeName()) as Interactable
-      interactable.targetingMode = 3
+      panelInteractable = root.createComponent(Interactable.getTypeName()) as Interactable
+      panelInteractable.targetingMode = 3
       const manip = root.createComponent(InteractableManipulation.getTypeName()) as InteractableManipulation
       manip.setCanRotate(false)
       manip.setCanScale(false)
     }
+
+    // Red edge around the panel, shown when it sits in its slot upside down.
+    const redEdge = global.scene.createSceneObject("RedEdge")
+    redEdge.setParent(root)
+    this.addPerimeter(redEdge, [], def.size, COLORS.red, this.glowMat, 0.7)
+    redEdge.enabled = false
 
     // Glowing holes for the part this panel receives.
     const holes: SceneObject[] = []
@@ -408,9 +435,54 @@ export class ScrewSenseWorld extends BaseScriptComponent {
       }
     }
 
-    const rt: PanelRt = {def, root, visual, body, finish, holes, flipped: def.startsFlipped, assembled: false, solidFinal: false}
+    const rt: PanelRt = {
+      def,
+      root,
+      visual,
+      body,
+      finish,
+      holes,
+      redEdge,
+      interactable: panelInteractable,
+      dragging: false,
+      flipped: def.startsFlipped,
+      assembled: false,
+      solidFinal: false
+    }
     this.panels[def.id] = rt
     this.applyFlip(rt)
+  }
+
+  /** Four bars around a panel's outline (all of its thickness, so they read from both sides). */
+  private addPerimeter(
+    parent: SceneObject,
+    list: RenderMeshVisual[],
+    size: vec3,
+    color: vec4,
+    mat: Material,
+    t: number
+  ): void {
+    const h = Math.max(0.5, size.y)
+    const hx = size.x / 2
+    const hz = size.z / 2
+    list.push(this.prim(parent, "EdgeN", "box", new vec3(size.x + t, h, t), new vec3(0, 0, -hz), color, mat))
+    list.push(this.prim(parent, "EdgeS", "box", new vec3(size.x + t, h, t), new vec3(0, 0, hz), color, mat))
+    list.push(this.prim(parent, "EdgeW", "box", new vec3(t, h, size.z + t), new vec3(-hx, 0, 0), color, mat))
+    list.push(this.prim(parent, "EdgeE", "box", new vec3(t, h, size.z + t), new vec3(hx, 0, 0), color, mat))
+  }
+
+  /** Hologram slot: translucent ghost of the panel with a glowing outline, at its assembled pose. */
+  private buildSlot(def: PanelDef): void {
+    const root = global.scene.createSceneObject("Slot_" + def.id)
+    root.setParent(this.root)
+    const pose = this.assembledPose(def)
+    root.getTransform().setLocalPosition(pose.pos)
+    root.getTransform().setLocalRotation(pose.rot)
+    const ghost = this.prim(root, "Ghost", "box", def.size, vec3.zero(), COLORS.ghost, this.ghostMat)
+    const edges: RenderMeshVisual[] = []
+    this.addPerimeter(root, edges, def.size, COLORS.slot, this.glowMat, 0.5)
+    root.enabled = false
+    this.slots[def.id] = {root, ghost, edges, active: false}
   }
 
   private applyFlip(p: PanelRt): void {
@@ -467,6 +539,17 @@ export class ScrewSenseWorld extends BaseScriptComponent {
     }
     this.pulseHoles()
     this.pulseHints()
+    this.pulseSlots()
+  }
+
+  private pulseSlots(): void {
+    if (!this.hologramVisible) return
+    const k = 0.5 + 0.5 * Math.sin(this.time * 5)
+    for (const id in this.slots) {
+      const sl = this.slots[id]
+      const c = sl.active ? this.mix(COLORS.slotPulse, COLORS.slot, k) : COLORS.slot.uniformScale(0.55)
+      for (const e of sl.edges) ScrewSenseWorld.tint(e, new vec4(c.x, c.y, c.z, 1))
+    }
   }
 
   private pulseHoles(): void {
@@ -512,6 +595,30 @@ export class ScrewSenseWorld extends BaseScriptComponent {
         if (p.dragging) this.partReleased(p)
       })
     }
+  }
+
+  private bindPanelInteractions(): void {
+    for (const id in this.panels) {
+      const p = this.panels[id]
+      if (!p.interactable) continue
+      const manip = p.root.getComponent(InteractableManipulation.getTypeName()) as InteractableManipulation
+      p.interactable.onTriggerStart.add(() => {
+        p.dragging = true
+        this.cancelTween("panel-" + id)
+        this.onPanelGrabbed.invoke(p.def.id)
+      })
+      manip.onManipulationEnd.add(() => this.panelReleased(p))
+      p.interactable.onTriggerEnd.add(() => {
+        if (p.dragging) this.panelReleased(p)
+      })
+    }
+  }
+
+  private panelReleased(p: PanelRt): void {
+    if (!p.dragging) return
+    p.dragging = false
+    const dist = p.root.getTransform().getWorldPosition().distance(this.panelSlotWorldPos(p.def.id))
+    this.onPanelReleased.invoke({panelId: p.def.id, slotDistance: dist})
   }
 
   private partReleased(p: PartRt): void {
@@ -643,6 +750,90 @@ export class ScrewSenseWorld extends BaseScriptComponent {
     return this.panels[panelId].holes.some((h) => h.enabled)
   }
 
+  // ------------------------------------------------------------------ hologram (phase 2)
+  setHologramVisible(v: boolean): void {
+    this.hologramVisible = v
+    for (const id in this.slots) {
+      const sl = this.slots[id]
+      sl.root.enabled = v
+      sl.ghost.sceneObject.enabled = v && !this.panels[id].assembled
+    }
+  }
+
+  /** The slots of these panels pulse; the others rest dimmed. */
+  setActiveSlots(ids: PanelId[]): void {
+    for (const id in this.slots) this.slots[id].active = ids.indexOf(id as PanelId) >= 0
+  }
+
+  panelSlotWorldPos(id: PanelId): vec3 {
+    return this.slots[id].root.getTransform().getWorldPosition()
+  }
+
+  /** Move a released panel into its hologram slot; it turns solid unless it lies upside down. */
+  snapPanelToSlot(id: PanelId, done?: () => void): void {
+    const p = this.panels[id]
+    const tr = p.root.getTransform()
+    const from = tr.getLocalPosition()
+    const fromRot = tr.getLocalRotation()
+    const target = this.assembledPose(p.def)
+    p.assembled = true
+    this.slots[id].ghost.sceneObject.enabled = false
+    this.setSolidFinal(id, !p.flipped)
+    p.redEdge.enabled = p.flipped
+    this.tween("panel-" + id, 0.35, (k) => {
+      const e = easeInOut(k)
+      tr.setLocalPosition(vec3.lerp(from, target.pos, e))
+      tr.setLocalRotation(quat.slerp(fromRot, target.rot, e))
+    }, done)
+  }
+
+  /** Send one released panel back to its place in the flat-pack layout. */
+  returnPanelToPile(id: PanelId, done?: () => void): void {
+    const p = this.panels[id]
+    const tr = p.root.getTransform()
+    const from = tr.getLocalPosition()
+    const fromRot = tr.getLocalRotation()
+    const target = this.pilePose(p.def)
+    this.markPanelUnplaced(p)
+    this.tween("panel-" + id, 0.3, (k) => {
+      const e = easeInOut(k)
+      tr.setLocalPosition(vec3.lerp(from, target.pos, e))
+      tr.setLocalRotation(quat.slerp(fromRot, target.rot, e))
+    }, done)
+  }
+
+  /** The panel was lifted out of its slot (or sent away): it is no longer placed. */
+  markPanelUnplaced(p: PanelRt | PanelId): void {
+    const rt = typeof p === "string" ? this.panels[p] : p
+    rt.assembled = false
+    rt.redEdge.enabled = false
+    this.setSolidFinal(rt.def.id, false)
+    if (this.hologramVisible) this.slots[rt.def.id].ghost.sceneObject.enabled = true
+  }
+
+  /** Turn a placed panel over (the Flip button). */
+  flipPanel(id: PanelId, done?: () => void): void {
+    const p = this.panels[id]
+    if (!p.flipped) {
+      if (done) done()
+      return
+    }
+    p.flipped = false
+    p.redEdge.enabled = false
+    const tr = p.visual.getTransform()
+    const from = tr.getLocalRotation()
+    this.tween("flip-" + id, 0.4, (k) => {
+      tr.setLocalRotation(quat.slerp(from, quat.quatIdentity(), easeInOut(k)))
+    }, () => {
+      this.setSolidFinal(id, true)
+      if (done) done()
+    })
+  }
+
+  panelRedEdgeVisible(id: PanelId): boolean {
+    return this.panels[id].redEdge.enabled
+  }
+
   /** Animate panels from where they are to the assembled pose in the cabinet. */
   assemblePanels(ids: PanelId[], done?: () => void): void {
     let remaining = ids.length
@@ -676,10 +867,9 @@ export class ScrewSenseWorld extends BaseScriptComponent {
       const from = tr.getLocalPosition()
       const fromRot = tr.getLocalRotation()
       const target = this.pilePose(p.def)
-      p.assembled = false
+      this.markPanelUnplaced(p)
       p.flipped = p.def.startsFlipped
       this.applyFlip(p)
-      this.setSolidFinal(id, false)
       this.tween("panel-" + id, 0.6, (k) => {
         const e = easeInOut(k)
         tr.setLocalPosition(vec3.lerp(from, target.pos, e))
@@ -703,10 +893,10 @@ export class ScrewSenseWorld extends BaseScriptComponent {
       const pose = this.pilePose(p.def)
       this.cancelTween("panel-" + id)
       this.setPose(p, pose.pos, pose.rot)
-      p.assembled = false
+      this.markPanelUnplaced(p)
+      p.dragging = false
       p.flipped = p.def.startsFlipped
       this.applyFlip(p)
-      this.setSolidFinal(id, false)
     }
     this.clearHoles()
   }

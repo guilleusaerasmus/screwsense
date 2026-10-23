@@ -13,6 +13,8 @@ import {BackPlate} from "SpectaclesUIKit.lspkg/Scripts/BackPlate"
 import {RoundButton} from "SpectaclesUIKit.lspkg/Scripts/Components/Button/RoundButton"
 import {RectangleButton} from "SpectaclesUIKit.lspkg/Scripts/Components/Button/RectangleButton"
 import {ElementContent} from "SpectaclesUIKit.lspkg/Scripts/Components/Content/ElementContent"
+import {RoundedRectangle, GradientParameters} from "SpectaclesUIKit.lspkg/Scripts/Visuals/RoundedRectangle/RoundedRectangle"
+import {RoundedRectangleVisual} from "SpectaclesUIKit.lspkg/Scripts/Visuals/RoundedRectangle/RoundedRectangleVisual"
 import {Billboard} from "SpectaclesInteractionKit.lspkg/Components/Interaction/Billboard/Billboard"
 import Event from "SpectaclesInteractionKit.lspkg/Utils/Event"
 
@@ -27,6 +29,30 @@ const TYPE_SCALE: Record<TextRole, {size: number; weight: number}> = {
   Subheadline: {size: 41, weight: 700},
   Body: {size: 39, weight: 500},
   Button: {size: 39, weight: 500}
+}
+// Light palette: the display is additive, so dark plates would vanish. Plates are
+// bright with dark text, which stays readable against any room.
+const UI_PLATE = new vec4(0.9, 0.95, 1.0, 1)
+const UI_TEXT = new vec4(0.04, 0.1, 0.22, 1)
+function solid(c: vec4): GradientParameters {
+  return {
+    type: "Linear",
+    start: new vec2(-1, 1),
+    end: new vec2(1, -1),
+    stop0: {enabled: true, color: c, percent: 0},
+    stop1: {enabled: true, color: c, percent: 1}
+  }
+}
+function styleVisual(v: RoundedRectangleVisual, base: vec4, hover: vec4, press: vec4): void {
+  v.defaultGradient = solid(base)
+  v.hoveredGradient = solid(hover)
+  v.triggeredGradient = solid(press)
+  v.inactiveGradient = solid(base.uniformScale(0.8))
+}
+function darkText(ec: ElementContent): void {
+  const e = ec as any
+  e._useTextColorOverride = true
+  e._textColorOverride = UI_TEXT
 }
 function roleSize(role: TextRole): number {
   return TYPE_SCALE[role].size * (READ_DISTANCE_CM / 110)
@@ -70,15 +96,21 @@ export class ScrewSenseUI extends BaseScriptComponent {
   @input
   @hint("Width of the Back button (cm).")
   backWidth: number = 6
+  @input
+  @hint("Uniform scale of every UI element: the table is read from about 1.5 m, so the UI is enlarged.")
+  uiScale: number = 3
   @ui.group_end
 
   readonly onDone = new Event<void>()
   readonly onBack = new Event<void>()
+  readonly onFlip = new Event<void>()
 
   private headerText: Text
   private bodyText: Text
   private doneButton: RoundButton
   private backButton: RectangleButton
+  private flipButton: RectangleButton
+  private flipRoot: SceneObject
   private messageText: Text
   private cardRoot: SceneObject
   private doneRoot: SceneObject
@@ -87,11 +119,14 @@ export class ScrewSenseUI extends BaseScriptComponent {
   private lastBody = ""
 
   onAwake(): void {
+    this.sceneObject.getTransform().setLocalScale(vec3.one().uniformScale(this.uiScale))
     this.buildCard()
     this.buildDone()
     this.buildBack()
+    this.buildFlip()
     this.buildMessage()
     this.showCard(false)
+    this.showFlip(null)
     this.showDoneBack(false)
     this.showMessage(null)
   }
@@ -102,6 +137,14 @@ export class ScrewSenseUI extends BaseScriptComponent {
     this.cardRoot.createComponent("Component.Canvas")
     this.cardRoot.createComponent(Billboard.getTypeName())
     const plate = this.cardRoot.createComponent(BackPlate.getTypeName()) as BackPlate
+    // The plate initialises itself on OnStart and sets its dark default; recolour it just after.
+    const recolor = this.createEvent("DelayedCallbackEvent")
+    recolor.bind(() => {
+      const rr = this.cardRoot.getComponent(RoundedRectangle.getTypeName()) as RoundedRectangle
+      rr.gradient = false
+      rr.backgroundColor = UI_PLATE
+    })
+    this.createEvent("OnStartEvent").bind(() => recolor.reset(0.1))
 
     const content = this.child(this.cardRoot, "Content")
     content.getTransform().setLocalPosition(new vec3(0, 0, 0.6))
@@ -134,6 +177,7 @@ export class ScrewSenseUI extends BaseScriptComponent {
     const t = so.createComponent("Component.Text") as Text
     t.depthTest = true
     applyTextRole(t, role)
+    t.textFill.color = UI_TEXT
     t.horizontalAlignment = HorizontalAlignment.Center
     t.verticalAlignment = VerticalAlignment.Center
     t.horizontalOverflow = HorizontalOverflow.Overflow
@@ -149,6 +193,14 @@ export class ScrewSenseUI extends BaseScriptComponent {
     this.doneButton = this.doneRoot.createComponent(RoundButton.getTypeName()) as RoundButton
     this.doneButton.width = this.doneSize
     this.labelButton(this.doneRoot, "Done", "Headline2", new vec2(this.doneSize, 3))
+    this.doneButton.onInitialized.add(() =>
+      styleVisual(
+        this.doneButton.visual as RoundedRectangleVisual,
+        new vec4(0.6, 0.97, 0.7, 1),
+        new vec4(0.85, 1, 0.9, 1),
+        new vec4(0.4, 0.82, 0.55, 1)
+      )
+    )
     this.doneButton.onTriggerUp.add(() => this.onDone.invoke())
   }
 
@@ -158,16 +210,43 @@ export class ScrewSenseUI extends BaseScriptComponent {
     this.backButton = this.backRoot.createComponent(RectangleButton.getTypeName()) as RectangleButton
     this.backButton.onInitialized.add(() => {
       this.backButton.size = new vec3(this.backWidth, 3.6, 1)
+      styleVisual(
+        this.backButton.visual as RoundedRectangleVisual,
+        new vec4(0.85, 0.9, 1, 1),
+        new vec4(1, 1, 1, 1),
+        new vec4(0.6, 0.7, 0.92, 1)
+      )
     })
     this.labelButton(this.backRoot, "Back", "Subheadline", new vec2(this.backWidth, 2.4))
     this.backButton.onTriggerUp.add(() => this.onBack.invoke())
   }
 
+  /** The Flip button hangs next to a panel that was placed upside down (phase 2). */
+  private buildFlip(): void {
+    const anchor = global.scene.createSceneObject("FlipAnchor")
+    anchor.setParent(this.sceneObject)
+    this.flipRoot = this.child(anchor, "FlipButton")
+    this.flipRoot.createComponent(Billboard.getTypeName())
+    this.flipButton = this.flipRoot.createComponent(RectangleButton.getTypeName()) as RectangleButton
+    this.flipButton.onInitialized.add(() => {
+      this.flipButton.size = new vec3(this.backWidth, 3.6, 1)
+      styleVisual(
+        this.flipButton.visual as RoundedRectangleVisual,
+        new vec4(1, 0.78, 0.7, 1),
+        new vec4(1, 0.9, 0.85, 1),
+        new vec4(0.95, 0.55, 0.45, 1)
+      )
+    })
+    this.labelButton(this.flipRoot, "Flip", "Subheadline", new vec2(this.backWidth, 2.4))
+    this.flipButton.onTriggerUp.add(() => this.onFlip.invoke())
+  }
+
   private labelButton(parent: SceneObject, text: string, role: TextRole, size: vec2): void {
     const ec = parent.createComponent(ElementContent.getTypeName()) as ElementContent
     ec.text = text
-    ec.textSize = roleSize(role)
+    ec.textSize = roleSize(role) * 1.4
     ec.sizeOverride = size
+    darkText(ec)
   }
 
   private buildMessage(): void {
@@ -217,8 +296,8 @@ export class ScrewSenseUI extends BaseScriptComponent {
   /** World position of the card anchor, used to hang it next to a panel. */
   moveCardTo(worldPos: vec3): void {
     this.cardAnchor.getTransform().setWorldPosition(worldPos)
-    this.doneAnchor.getTransform().setWorldPosition(worldPos.add(this.doneOffset))
-    this.backAnchor.getTransform().setWorldPosition(worldPos.add(this.backOffset))
+    this.doneAnchor.getTransform().setWorldPosition(worldPos.add(this.doneOffset.uniformScale(this.uiScale)))
+    this.backAnchor.getTransform().setWorldPosition(worldPos.add(this.backOffset.uniformScale(this.uiScale)))
   }
 
   showDoneBack(visible: boolean): void {
@@ -232,6 +311,16 @@ export class ScrewSenseUI extends BaseScriptComponent {
 
   setBackEnabled(enabled: boolean): void {
     this.backButton.opacity = enabled ? 1 : 0.45
+  }
+
+  /** Show the Flip button at a world position, or hide it with `null`. */
+  showFlip(worldPos: vec3 | null): void {
+    this.flipRoot.enabled = worldPos !== null
+    if (worldPos !== null) this.flipRoot.getParent().getTransform().setWorldPosition(worldPos)
+  }
+
+  isFlipVisible(): boolean {
+    return this.flipRoot.enabled
   }
 
   showMessage(text: string | null): void {

@@ -8,7 +8,10 @@
 import {ScrewSenseWorld} from "./ScrewSenseWorld"
 import {ScrewSenseUI} from "./ScrewSenseUI"
 import WorldCameraFinderProvider from "SpectaclesInteractionKit.lspkg/Providers/CameraProvider/WorldCameraFinderProvider"
-import {PartId, STEPS, StepDef, TOTAL_STEPS} from "./ScrewSenseConfig"
+import {PanelId, PartId, STEPS, StepDef, TOTAL_STEPS, panelDef} from "./ScrewSenseConfig"
+
+// A released panel snaps into its slot when its centre is this close (cm).
+const SNAP_CM = 5
 
 export type Phase = "idle" | "match" | "place" | "busy" | "finished"
 
@@ -46,8 +49,10 @@ export class ScrewSenseMain extends BaseScriptComponent {
   private step = 0
   private phase: Phase = "idle"
   private audio: {[k: string]: AudioComponent} = {}
+  private plays: {[k: string]: number} = {}
   private hintTimer: DelayedCallbackEvent
   private token = 0
+  private placed: PanelId[] = []
 
   onAwake(): void {
     ;(global as any).screwSense = this
@@ -62,8 +67,11 @@ export class ScrewSenseMain extends BaseScriptComponent {
   private onStart(): void {
     this.placeInFrontOfUser()
     this.world.onPartReleased.add((e) => this.onPartReleased(e.partId, e.outlineId))
+    this.world.onPanelGrabbed.add((id) => this.onPanelGrabbed(id))
+    this.world.onPanelReleased.add((e) => this.onPanelReleased(e.panelId, e.slotDistance))
     this.ui.onDone.add(() => this.onDone())
     this.ui.onBack.add(() => this.onBack())
+    this.ui.onFlip.add(() => this.onFlip())
     this.restart()
   }
 
@@ -92,7 +100,13 @@ export class ScrewSenseMain extends BaseScriptComponent {
 
   private play(name: string): void {
     const a = this.audio[name]
+    this.plays[name] = (this.plays[name] || 0) + 1
     if (a && a.audioTrack) a.play(1)
+  }
+
+  /** How many times a sound ("match", "wrong", "snap") has been triggered (tests). */
+  playCount(name: string): number {
+    return this.plays[name] || 0
   }
 
   // ------------------------------------------------------------------ flow
@@ -103,6 +117,10 @@ export class ScrewSenseMain extends BaseScriptComponent {
     this.world.setTrayVisible(false)
     this.world.clearHoles()
     this.world.setAllSolidFinal(false)
+    this.world.setHologramVisible(this.dragMode())
+    this.world.setActiveSlots([])
+    this.placed = []
+    this.ui.showFlip(null)
     this.ui.showMessage(null)
     this.ui.showCard(false)
     this.ui.showDoneBack(false)
@@ -128,6 +146,9 @@ export class ScrewSenseMain extends BaseScriptComponent {
     this.world.clearHoles()
     this.world.resetParts(true)
     this.world.setTrayVisible(true)
+    this.placed = []
+    this.ui.showFlip(null)
+    this.world.setActiveSlots(this.dragMode() ? s.panels : [])
     this.showCardFor(s)
     this.ui.showDoneBack(true)
     this.ui.setDoneReady(false)
@@ -163,7 +184,7 @@ export class ScrewSenseMain extends BaseScriptComponent {
     this.world.snapPartIntoOutline(partId)
     this.play("match")
     this.world.glowHoles(s.panels, partId)
-    this.ui.setDoneReady(true)
+    this.refreshPlaceUi()
     // The step counts as matched immediately; the tray leaves after a short beat.
     this.after(0.7, () => {
       if (token === this.token && this.phase === "place") {
@@ -189,12 +210,83 @@ export class ScrewSenseMain extends BaseScriptComponent {
     })
   }
 
+  // ------------------------------------------------------------------ panels (phase 2)
+  /** Panels are placed by hand into the hologram instead of flying there. */
+  private dragMode(): boolean {
+    return this.world.panelsDraggable
+  }
+
+  private flippedPlaced(): PanelId | null {
+    for (const id of this.placed) if (this.world.panelIsFlipped(id)) return id
+    return null
+  }
+
+  private allPlaced(): boolean {
+    const s = this.currentStep()
+    return s.panels.every((id) => this.placed.indexOf(id) >= 0 && !this.world.panelIsFlipped(id))
+  }
+
+  /** Done is ready once the step is matched and, in hand-placement mode, every panel sits right. */
+  private refreshPlaceUi(): void {
+    if (!this.dragMode()) {
+      this.ui.setDoneReady(true)
+      return
+    }
+    this.ui.setDoneReady(this.phase === "place" && this.allPlaced())
+    const flipped = this.flippedPlaced()
+    if (flipped === null) {
+      this.ui.showFlip(null)
+    } else {
+      this.ui.showFlip(this.world.panelSlotWorldPos(flipped).add(new vec3(0, 14, 10)))
+    }
+  }
+
+  private onPanelGrabbed(id: PanelId): void {
+    const i = this.placed.indexOf(id)
+    if (i >= 0) {
+      this.placed.splice(i, 1)
+      this.world.markPanelUnplaced(id)
+      this.refreshPlaceUi()
+    }
+  }
+
+  private onPanelReleased(id: PanelId, slotDistance: number): void {
+    const s = this.currentStep()
+    const mine = this.phase === "place" && s.panels.indexOf(id) >= 0
+    if (!mine && panelDef(id).step < s.index && this.world.panelIsAssembled(id)) {
+      // A panel of a finished step belongs in its slot: put it back.
+      this.world.snapPanelToSlot(id)
+      return
+    }
+    if (!mine || slotDistance > SNAP_CM) {
+      this.world.returnPanelToPile(id)
+      this.refreshPlaceUi()
+      return
+    }
+    if (this.placed.indexOf(id) < 0) this.placed.push(id)
+    this.world.snapPanelToSlot(id)
+    this.play("snap")
+    this.refreshPlaceUi()
+    if (this.world.panelIsFlipped(id)) this.flashHint("Upside down: pinch Flip")
+  }
+
+  private onFlip(): void {
+    const id = this.flippedPlaced()
+    if (id === null) return
+    this.world.flipPanel(id, () => this.refreshPlaceUi())
+    this.ui.showFlip(null)
+  }
+
   private onDone(): void {
     if (this.phase === "match") {
       this.flashHint("Match the part first")
       return
     }
     if (this.phase !== "place") return
+    if (this.dragMode() && !this.allPlaced()) {
+      this.flashHint(this.flippedPlaced() !== null ? "Flip the panel first" : "Place the panels in their slots")
+      return
+    }
     this.phase = "busy"
     this.token++
     const s = this.currentStep()
@@ -202,19 +294,28 @@ export class ScrewSenseMain extends BaseScriptComponent {
     this.world.setTrayVisible(false)
     this.ui.showCard(false)
     this.ui.setDoneReady(false)
-    this.world.assemblePanels(s.panels, () => {
+    this.ui.showFlip(null)
+    const advance = (): void => {
       this.play("snap")
       if (this.step === STEPS.length - 1) {
         this.finish()
       } else {
         this.beginStep(this.step + 1)
       }
-    })
+    }
+    if (this.dragMode()) {
+      // The panels already sit in the hologram; a short beat, then the next step.
+      this.world.setActiveSlots([])
+      this.after(0.4, advance)
+    } else {
+      this.world.assemblePanels(s.panels, advance)
+    }
   }
 
   private finish(): void {
     this.phase = "finished"
     this.world.setAllSolidFinal(true)
+    this.world.setHologramVisible(false)
     this.ui.showCard(false)
     this.ui.showMessage("Assembled!")
     this.ui.setDoneReady(false)
@@ -230,7 +331,8 @@ export class ScrewSenseMain extends BaseScriptComponent {
       return
     }
     if (this.phase === "place") {
-      // Undo the match: the part has to be identified again.
+      // Undo the match: the part has to be identified again, panels go back to the pile.
+      if (this.dragMode()) for (const id of this.currentStep().panels) this.world.returnPanelToPile(id)
       this.beginStep(this.step)
       return
     }
@@ -247,12 +349,17 @@ export class ScrewSenseMain extends BaseScriptComponent {
     const s = this.currentStep()
     this.world.setTrayVisible(false)
     this.ui.showCard(false)
+    this.ui.showFlip(null)
+    this.placed = []
+    this.world.setAllSolidFinal(false)
+    if (this.dragMode()) this.world.setHologramVisible(true)
     this.world.disassemblePanels(s.panels, () => {
       this.phase = "place"
+      this.world.setActiveSlots(this.dragMode() ? s.panels : [])
       this.showCardFor(s)
       this.world.glowHoles(s.panels, s.partId)
       this.ui.showDoneBack(true)
-      this.ui.setDoneReady(true)
+      this.refreshPlaceUi()
       this.ui.setBackEnabled(true)
     })
   }
@@ -275,5 +382,9 @@ export class ScrewSenseMain extends BaseScriptComponent {
 
   getPhase(): Phase {
     return this.phase
+  }
+
+  isPanelPlaced(id: PanelId): boolean {
+    return this.placed.indexOf(id) >= 0
   }
 }

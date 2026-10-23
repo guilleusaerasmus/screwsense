@@ -13,13 +13,14 @@ export class ScrewSenseP1WrongScenario extends Scenario {
     const ix = new ScrewSenseLeafInteractor()
     await begin(ix)
     const world = sys().world
+    const wrongBefore = sys().playCount("wrong")
 
     // Screw A released over outline C: does not fit.
     await dropPart(ix, "A", "C")
     await sleep(100)
     expect(world.getOutlineState("C")).toBe("wrong")
     expect(world.getOutlineState("A")).toBe("hint")
-    expect(sys().audio["wrong"].isPlaying()).toBe(true)
+    expect(sys().playCount("wrong")).toBe(wrongBefore + 1)
     expect(sys().getPhase()).toBe("match")
     expect(sys().getStepIndex()).toBe(0)
     expect(world.holesGlowing("sideL")).toBe(false)

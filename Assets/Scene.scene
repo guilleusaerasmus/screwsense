@@ -29,7 +29,7 @@
   Layers: 1
   LocalTransform: !<TransformEntity>
     Position: {x: 0.000000, y: 0.000000, z: 0.000000}
-    Rotation: {x: 0.000000, y: 0.000000, z: 0.000000}
+    Rotation: {x: -20.000000, y: 0.000000, z: 0.000000}
     Scale: {x: 1.000000, y: 1.000000, z: 1.000000}
     HasSegmentScaleCompensation: false
   Children:
@@ -1004,6 +1004,7 @@
     backOffset: true
     doneSize: true
     backWidth: true
+    uiScale: true
   ScriptTypesDefault:
     {}
   ScriptInputs:
@@ -1017,6 +1018,7 @@
       backOffset: !<Vec3> {x: 15.000000, y: -8.000000, z: 0.000000}
       doneSize: !<float> 8.000000
       backWidth: !<float> 6.000000
+      uiScale: 1.600000
   ScriptTypes:
     "":
       {}
@@ -1283,7 +1285,7 @@
   Enabled: true
   Layers: 1
   LocalTransform: !<TransformEntity>
-    Position: {x: 35.000000, y: 14.000000, z: 20.000000}
+    Position: {x: 30.000000, y: 16.000000, z: 22.000000}
     Rotation: {x: 30.000000, y: 0.000000, z: 0.000000}
     Scale: {x: 1.000000, y: 1.000000, z: 1.000000}
     HasSegmentScaleCompensation: false
@@ -2315,7 +2317,7 @@
   PrefabRemaps:
     []
   Name: LeafIndex
-  Enabled: true
+  Enabled: false
   Layers: 1
   LocalTransform: !<TransformEntity>
     Position: {x: 0.000000, y: 0.000000, z: 0.000000}
@@ -2383,7 +2385,7 @@
   Enabled: true
   Layers: 1
   LocalTransform: !<TransformEntity>
-    Position: {x: 0.000000, y: -22.000000, z: -70.000000}
+    Position: {x: 16.000000, y: -36.000000, z: -270.000000}
     Rotation: {x: 0.000000, y: 0.000000, z: 0.000000}
     Scale: {x: 1.000000, y: 1.000000, z: 1.000000}
     HasSegmentScaleCompensation: false
@@ -2508,7 +2510,6 @@
   Enabled: true
   ScriptAsset: !<reference> 0cf77d82-171c-4eff-87aa-a6bac0a1f6a7
   ScriptInputsDefault:
-    panelsDraggable: true
     partGrabPadding: true
     outlineReleaseRadius: true
     debugColliders: true
@@ -2527,7 +2528,7 @@
       trayAnchor: !<reference.SceneObject> 653dc927-b487-4b23-b144-69a277cf0863
       cabinetAnchor: !<reference.SceneObject> acab2e61-a47e-47c0-87bc-86f219483999
       manualAnchor: !<reference.SceneObject> dfd88aa8-1620-448c-9f26-347aa04494bf
-      panelsDraggable: false
+      panelsDraggable: true
       partGrabPadding: !<float> 3.000000
       outlineReleaseRadius: !<float> 5.000000
       debugColliders: false
@@ -2541,7 +2542,7 @@
   Enabled: true
   Layers: 1
   LocalTransform: !<TransformEntity>
-    Position: {x: -43.000000, y: 0.000000, z: 19.500000}
+    Position: {x: -67.000000, y: 0.000000, z: 44.000000}
     Rotation: {x: 0.000000, y: 0.000000, z: 0.000000}
     Scale: {x: 1.000000, y: 1.000000, z: 1.000000}
     HasSegmentScaleCompensation: false
@@ -2669,7 +2670,7 @@
   Enabled: true
   Layers: 1
   LocalTransform: !<TransformEntity>
-    Position: {x: -30.000000, y: 0.000000, z: -11.500000}
+    Position: {x: -41.500000, y: 0.000000, z: 0.000000}
     Rotation: {x: 0.000000, y: 0.000000, z: 0.000000}
     Scale: {x: 1.000000, y: 1.000000, z: 1.000000}
     HasSegmentScaleCompensation: false
@@ -2906,7 +2907,7 @@
   Enabled: true
   Layers: 1
   LocalTransform: !<TransformEntity>
-    Position: {x: 0.000000, y: 0.000000, z: 22.000000}
+    Position: {x: 14.000000, y: 0.000000, z: 36.000000}
     Rotation: {x: 0.000000, y: 0.000000, z: 0.000000}
     Scale: {x: 1.000000, y: 1.000000, z: 1.000000}
     HasSegmentScaleCompensation: false

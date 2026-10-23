@@ -5,7 +5,7 @@ import {Scenario} from "Leaf.lspkg/Scenarios/scenario/Scenario"
 import {expect} from "Leaf.lspkg/Utils/common/Expect"
 import {sleep} from "Leaf.lspkg/Utils/common/Utils"
 import {ScrewSenseLeafInteractor} from "./ScrewSenseLeafInteractor"
-import {begin, matchCurrentStep, sys, tap} from "./ScrewSenseLeafKit"
+import {begin, matchCurrentStep, placeStepPanels, sys, tap} from "./ScrewSenseLeafKit"
 
 const PARTS = ["C", "A", "A", "B"]
 const NEXT_PANEL = ["bottom", "top", "back"]
@@ -22,6 +22,7 @@ export class ScrewSenseP1FlowScenario extends Scenario {
       expect(sys().getStepIndex()).toBe(step)
       expect(ui.getCardText().includes("Step " + (step + 1) + " of 4")).toBe(true)
       await matchCurrentStep(ix, PARTS[step])
+      if (world.panelsDraggable) await placeStepPanels(ix, step)
       await tap(ix, "DoneButton")
       await sleep(1800)
       if (step < 3) {

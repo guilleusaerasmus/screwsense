@@ -81,7 +81,7 @@ export interface PanelDef {
   // Pose when assembled, in cabinet space (origin = centre of the cabinet base).
   assembledPos: vec3
   assembledEuler: vec3 // degrees
-  // Pose when lying in the flat-pack pile, in pile space (origin = pile anchor).
+  // Pose when lying in the flat-pack layout, in pile space (origin = pile anchor).
   pilePos: vec3
   pileYawDeg: number
   step: number // 1-based step that fits this panel
@@ -100,7 +100,7 @@ export const PANELS: PanelDef[] = [
     size: new vec3(W, 0.6, 49),
     assembledPos: new vec3(0, 25, -17.2),
     assembledEuler: new vec3(-90, 0, 0),
-    pilePos: new vec3(-1, 0.3, 0),
+    pilePos: new vec3(6, 0.3, 31.8),
     pileYawDeg: 90,
     step: 4,
     startsFlipped: false,
@@ -120,7 +120,7 @@ export const PANELS: PanelDef[] = [
     size: new vec3(W, T, CAB_D),
     assembledPos: new vec3(0, 49.1, 0.3),
     assembledEuler: new vec3(0, 0, 0),
-    pilePos: new vec3(6, 1.5, 0),
+    pilePos: new vec3(18.7, 1.5, 22.2),
     pileYawDeg: 0,
     step: 3,
     startsFlipped: false,
@@ -133,7 +133,7 @@ export const PANELS: PanelDef[] = [
     size: new vec3(W, T, CAB_D),
     assembledPos: new vec3(0, 5.9, 0.3),
     assembledEuler: new vec3(180, 0, 0),
-    pilePos: new vec3(-5, 3.35, 0),
+    pilePos: new vec3(-20.3, 1.5, 22.2),
     pileYawDeg: 0,
     step: 2,
     startsFlipped: true,
@@ -146,8 +146,8 @@ export const PANELS: PanelDef[] = [
     size: new vec3(50, T, 35),
     assembledPos: new vec3(19.1, 25, 0),
     assembledEuler: new vec3(0, 0, -90),
-    pilePos: new vec3(-3, 5.2, 0),
-    pileYawDeg: 0,
+    pilePos: new vec3(-21, 0.9, -25),
+    pileYawDeg: 90,
     step: 1,
     startsFlipped: false,
     holes: {
@@ -159,8 +159,8 @@ export const PANELS: PanelDef[] = [
     size: new vec3(50, T, 35),
     assembledPos: new vec3(-19.1, 25, 0),
     assembledEuler: new vec3(0, 0, 90),
-    pilePos: new vec3(1, 7.05, 0),
-    pileYawDeg: 0,
+    pilePos: new vec3(17, 0.9, -25),
+    pileYawDeg: 90,
     step: 1,
     startsFlipped: false,
     holes: {
