@@ -1,6 +1,16 @@
 # ScrewSense build report
 
-**Status: partial. Phase 1 is built, fixed and partly proven by LEAF (criteria 3, 4 and 6 each passed at least once). Phase 2 is written and compiles but has never run. Phase 3 is not built. Lens Studio stopped responding three times in this session and was still frozen when I stopped.**
+**Status: partial. Phase 1 is built, fixed and partly proven by LEAF (criteria 3, 4 and 6 each passed at least once). Phase 2 is written, compiles and its scene renders correctly in the preview, but no Phase 2 LEAF run has completed (c5 hung once and froze the editor once). Phase 3 is not built. Lens Studio stopped responding in two sessions (four times in total) and was frozen again when I stopped.**
+
+## Session 2 (24 Oct, 09:50 to 10:15): what happened
+- Reopened the project. `RecompileTypeScriptTool` succeeded with the Phase 2 code and both new scenarios (c5 and the Phase 2 c6).
+- **Preview screenshot of the Phase 2 scene (`panelsDraggable` on): OK.** Table, both panel rows, the light step card ("Step 1 of 4") with Done and Back, the dish with the three parts, the outline tray and the cyan hologram with its yellow slot outlines are all in view at start. The editor was responsive at this point.
+- Enabled `LeafIndex` and opened the LEAF panel. The LEAF plugin loaded 4 scenarios (c3, c4, c5, c6), but only after about 2.5 minutes, and `list_leaf_scenarios` timed out. Every `run_leaf_scenario` call also timed out on the client side.
+- The timed-out calls were not lost: the plugin queued them. The first call became a `c5-panels-and-flip` run at 10:01:43. That run printed nothing and never moved the scene (a screenshot at 10:05 still showed the start state: no dowel moved, no panel placed) for more than 3 minutes. My next call then cancelled it ("There is already a scenario running. The scene will be reset") and a fresh c5 run started at 10:06:54.
+- **From about 10:08 Lens Studio stopped responding (Windows "not responding", about 1.1 GB, free RAM about 1.9 GB of 16 GB). It was still frozen at 10:13, more than 5 minutes later, so I stopped as agreed.** Screenshots and the other MCP calls time out too. No `PASSED`/`FAILED` line was ever written for c5, so **no Phase 2 criterion is proven** and c6 was not run in Phase 2 mode.
+- Before the freeze the log was full of `SceneMaterialBatcher ... batching retries exhausted` warnings for SIK materials (CursorVisual, index/thumb tip glow). That points to the preview being starved for GPU/RAM while a LEAF scenario runs.
+- **State I left the project in:** `LeafIndex` is **enabled** (I could not reach the editor to disable it) and the LEAF panel is open. Nothing was changed in the scene or in any script this session, so there is nothing unsaved. Phase 3 was not started because Task B depends on Phase 2 passing.
+- Likely cause of the c5 hang (not proven): the first action of c5 is the dowel drag via `dragTo`, the flaky call from Phase 1; if `dragStarted`/`dragEnded` is never fired by the interactor the `await` never returns and nothing times out. A hard timeout around `dragTo` in `ScrewSenseLeafInteractor` would turn a silent hang into a normal failure.
 
 ## What happened to the editor
 Lens Studio (Windows: "not responding") froze three times. I did not open the LEAF panel and I never called `list_leaf_scenarios`.
@@ -50,7 +60,7 @@ The off-view arrow and soft chime from "When things show".
 | 2 | Pinching Scan turns the drawing into the hologram and shows the Step 1 card | **No test.** Not built. |
 | 3 | Dowel C over outline C snaps in, outline green, holes glow on both side panels | **Passed** (`c3-right-match`, three separate runs, Phase 1 mode). |
 | 4 | Wrong part: outline shakes red, low tone, correct outline lights up, no advance | **Passed** once (`c4-wrong-match`, after fixing the test's sound check). A later re-run was left pending when the editor froze, so it is not counted. |
-| 5 | Panel drag to slot, flipped panel with red edge, Flip button | **Not run.** Scenario `c5-panels-and-flip` written, not compiled. |
+| 5 | Panel drag to slot, flipped panel with red edge, Flip button | **Not proven.** `c5-panels-and-flip` compiles and is registered. It started twice in session 2: the first run hung silently, the second froze the editor. No result. |
 | 6 | Done shows the next card beside the next panel; after step 4 the finished table and "Assembled!" | **Passed once** (`c6-flow-to-finish`, 32 s, Phase 1 mode, all four steps). It also failed in 3 other runs, always on the first drag (see Known issues). Not run in Phase 2 mode. |
 | 7 | Rewind slider scrubs exploded to assembled and returns on release | **No test.** Not built. |
 
@@ -85,4 +95,8 @@ The off-view arrow and soft chime from "When things show".
 Labels: **logic proven** (Phase 1, in preview): the right match, the wrong match and the full four-step flow. **Logic unproven:** the whole Phase 2 (hologram, snapping, flip) and anything in Phase 3. **Feel unproven:** everything, including grabbing tiny parts with real hands, how the cyan overlays and the light UI read on a real additive display, and the view distance.
 
 ## Suggested next steps
-Reopen Lens Studio, untick `panelsDraggable` if it hangs, and save. Compile the new scenario, then run `c5-panels-and-flip` and `c6-flow-to-finish` one at a time, with `panelsDraggable` on. Re-test `c4-wrong-match` once. Then build Phase 3 (manual, Scan, rewind slider) only once a few full runs go through without a freeze.
+1. Restart Lens Studio (close other heavy apps first; free RAM was under 2 GB). On opening, **disable `LeafIndex`** (it was left enabled) and untick `panelsDraggable` if it hangs, then save.
+2. Do not call `list_leaf_scenarios` and do not retry `run_leaf_scenario` after a timeout: the timed-out calls stay queued and a later call cancels the running scenario and restarts it. Make one call and watch the log (`Running scenario:` then `PASSED`/`FAILED`).
+3. Add a hard timeout around `dragTo` in `ScrewSenseLeafInteractor.ts` so a stuck drag fails instead of hanging, then run `c5-panels-and-flip` and `c6-flow-to-finish` one at a time with `panelsDraggable` on. Re-test `c4-wrong-match` once.
+4. Only then build Phase 3 (paper manual, Scan, rewind slider, `autoStart` off). Phase 3 is **left out cleanly**: nothing of it exists in the scene or the scripts, and `autoStart` is still on, so Phases 1 and 2 start at step 1 as before.
+5. Checking Phase 2 by hand in the preview (point 4 of the list above) is faster and lighter than LEAF on this PC.
