@@ -12,6 +12,7 @@ import {FlexAlign, FlexDirection, FlexJustify} from "SpectaclesUIKit.lspkg/Scrip
 import {BackPlate} from "SpectaclesUIKit.lspkg/Scripts/BackPlate"
 import {RoundButton} from "SpectaclesUIKit.lspkg/Scripts/Components/Button/RoundButton"
 import {RectangleButton} from "SpectaclesUIKit.lspkg/Scripts/Components/Button/RectangleButton"
+import {Slider} from "SpectaclesUIKit.lspkg/Scripts/Components/Slider/Slider"
 import {ElementContent} from "SpectaclesUIKit.lspkg/Scripts/Components/Content/ElementContent"
 import {RoundedRectangle, GradientParameters} from "SpectaclesUIKit.lspkg/Scripts/Visuals/RoundedRectangle/RoundedRectangle"
 import {RoundedRectangleVisual} from "SpectaclesUIKit.lspkg/Scripts/Visuals/RoundedRectangle/RoundedRectangleVisual"
@@ -97,6 +98,12 @@ export class ScrewSenseUI extends BaseScriptComponent {
   @hint("Width of the Back button (cm).")
   backWidth: number = 6
   @input
+  @hint("Diameter of the Scan button in the world (cm).")
+  scanSize: number = 8
+  @input
+  @hint("Length of the rewind slider track in the world (cm).")
+  sliderLength: number = 30
+  @input
   @hint("Uniform scale of every UI element: the table is read from about 1.5 m, so the UI is enlarged.")
   uiScale: number = 3
   @ui.group_end
@@ -104,6 +111,11 @@ export class ScrewSenseUI extends BaseScriptComponent {
   readonly onDone = new Event<void>()
   readonly onBack = new Event<void>()
   readonly onFlip = new Event<void>()
+  readonly onScan = new Event<void>()
+  // Rewind slider: grabbed, moved (0 exploded to 1 assembled) and released.
+  readonly onRewindGrab = new Event<void>()
+  readonly onRewindMove = new Event<number>()
+  readonly onRewindRelease = new Event<void>()
 
   private headerText: Text
   private bodyText: Text
@@ -116,6 +128,12 @@ export class ScrewSenseUI extends BaseScriptComponent {
   private doneRoot: SceneObject
   private backRoot: SceneObject
   private messageRoot: SceneObject
+  private scanRoot: SceneObject
+  private scanButton: RoundButton
+  private sliderRoot: SceneObject
+  private slider: Slider
+  private sliderHolding = false
+  private plateRecolor: DelayedCallbackEvent
   private lastBody = ""
 
   onAwake(): void {
@@ -125,10 +143,14 @@ export class ScrewSenseUI extends BaseScriptComponent {
     this.buildBack()
     this.buildFlip()
     this.buildMessage()
+    this.buildScan()
+    this.buildSlider()
     this.showCard(false)
     this.showFlip(null)
     this.showDoneBack(false)
     this.showMessage(null)
+    this.showScan(false)
+    this.showSlider(false)
   }
 
   // ------------------------------------------------------------------ build
@@ -138,13 +160,9 @@ export class ScrewSenseUI extends BaseScriptComponent {
     this.cardRoot.createComponent(Billboard.getTypeName())
     const plate = this.cardRoot.createComponent(BackPlate.getTypeName()) as BackPlate
     // The plate initialises itself on OnStart and sets its dark default; recolour it just after.
-    const recolor = this.createEvent("DelayedCallbackEvent")
-    recolor.bind(() => {
-      const rr = this.cardRoot.getComponent(RoundedRectangle.getTypeName()) as RoundedRectangle
-      rr.gradient = false
-      rr.backgroundColor = UI_PLATE
-    })
-    this.createEvent("OnStartEvent").bind(() => recolor.reset(0.1))
+    this.plateRecolor = this.createEvent("DelayedCallbackEvent")
+    this.plateRecolor.bind(() => this.colorPlate())
+    this.createEvent("OnStartEvent").bind(() => this.plateRecolor.reset(0.1))
 
     const content = this.child(this.cardRoot, "Content")
     content.getTransform().setLocalPosition(new vec3(0, 0, 0.6))
@@ -241,10 +259,76 @@ export class ScrewSenseUI extends BaseScriptComponent {
     this.flipButton.onTriggerUp.add(() => this.onFlip.invoke())
   }
 
-  private labelButton(parent: SceneObject, text: string, role: TextRole, size: vec2): void {
+  /** The big Scan button beside the paper manual. */
+  private buildScan(): void {
+    const anchor = global.scene.createSceneObject("ScanAnchor")
+    anchor.setParent(this.sceneObject)
+    this.scanRoot = this.child(anchor, "ScanButton")
+    this.scanRoot.createComponent(Billboard.getTypeName())
+    this.scanButton = this.scanRoot.createComponent(RoundButton.getTypeName()) as RoundButton
+    this.scanButton.width = this.scanSize / this.uiScale
+    this.labelButton(this.scanRoot, "Scan", "Headline2", new vec2(this.scanSize / this.uiScale, 2.4), 1.2)
+    this.scanButton.onInitialized.add(() =>
+      styleVisual(
+        this.scanButton.visual as RoundedRectangleVisual,
+        new vec4(0.55, 0.92, 1, 1),
+        new vec4(0.85, 0.98, 1, 1),
+        new vec4(0.35, 0.75, 0.95, 1)
+      )
+    )
+    this.scanButton.onTriggerUp.add(() => this.onScan.invoke())
+  }
+
+  /** The rewind slider along the front edge: left = exploded, right = assembled. */
+  private buildSlider(): void {
+    const anchor = global.scene.createSceneObject("SliderAnchor")
+    anchor.setParent(this.sceneObject)
+    this.sliderRoot = this.child(anchor, "RewindSlider")
+    this.slider = this.sliderRoot.createComponent(Slider.getTypeName()) as Slider
+    this.slider.onInitialized.add(() => {
+      this.slider.size = new vec3(this.sliderLength / this.uiScale, 1.2, 1)
+      const track = this.slider.visual as RoundedRectangleVisual
+      if (track) styleVisual(track, new vec4(0.55, 0.62, 0.75, 1), new vec4(0.65, 0.72, 0.85, 1), new vec4(0.5, 0.58, 0.72, 1))
+      const knob = this.slider.knobVisual as unknown as RoundedRectangleVisual
+      if (knob) styleVisual(knob, new vec4(0.55, 0.92, 1, 1), new vec4(0.85, 0.98, 1, 1), new vec4(0.35, 0.75, 0.95, 1))
+    })
+    this.slider.onTriggerDown.add(() => {
+      this.sliderHolding = true
+      this.onRewindGrab.invoke()
+    })
+    this.slider.onKnobMoved.add((v) => {
+      if (this.sliderHolding) this.onRewindMove.invoke(v)
+    })
+    this.slider.onTriggerUp.add(() => {
+      if (!this.sliderHolding) return
+      this.sliderHolding = false
+      this.onRewindRelease.invoke()
+    })
+    const w = this.sliderLength / this.uiScale / 2
+    this.sliderLabel("Rewind", new vec3(0, 2.4, 0), "Subheadline")
+    this.sliderLabel("Exploded", new vec3(-w, -2.2, 0), "Body")
+    this.sliderLabel("Assembled", new vec3(w, -2.2, 0), "Body")
+  }
+
+  private sliderLabel(text: string, pos: vec3, role: TextRole): void {
+    const so = this.child(this.sliderRoot, "Label_" + text)
+    so.getTransform().setLocalPosition(pos)
+    const t = so.createComponent("Component.Text") as Text
+    t.text = text
+    t.depthTest = true
+    applyTextRole(t, role)
+    t.textFill.color = new vec4(0.92, 0.97, 1, 1)
+    t.horizontalAlignment = HorizontalAlignment.Center
+    t.verticalAlignment = VerticalAlignment.Center
+    t.horizontalOverflow = HorizontalOverflow.Overflow
+    t.verticalOverflow = VerticalOverflow.Overflow
+    t.layoutRect = Rect.create(-3, 3, -0.9, 0.9)
+  }
+
+  private labelButton(parent: SceneObject, text: string, role: TextRole, size: vec2, scale: number = 1.4): void {
     const ec = parent.createComponent(ElementContent.getTypeName()) as ElementContent
     ec.text = text
-    ec.textSize = roleSize(role) * 1.4
+    ec.textSize = roleSize(role) * scale
     ec.sizeOverride = size
     darkText(ec)
   }
@@ -272,6 +356,18 @@ export class ScrewSenseUI extends BaseScriptComponent {
   // ------------------------------------------------------------------ API
   showCard(visible: boolean): void {
     this.cardRoot.enabled = visible
+    // The plate resets itself to its dark default when it is first enabled: recolour it again.
+    if (visible) {
+      this.colorPlate()
+      this.plateRecolor.reset(0.1)
+    }
+  }
+
+  private colorPlate(): void {
+    const rr = this.cardRoot.getComponent(RoundedRectangle.getTypeName()) as RoundedRectangle
+    if (!rr) return
+    rr.gradient = false
+    rr.backgroundColor = UI_PLATE
   }
 
   isCardVisible(): boolean {
@@ -321,6 +417,47 @@ export class ScrewSenseUI extends BaseScriptComponent {
 
   isFlipVisible(): boolean {
     return this.flipRoot.enabled
+  }
+
+  /** Show the Scan button at a world position, or hide it with `null`. */
+  showScanAt(worldPos: vec3 | null): void {
+    this.showScan(worldPos !== null)
+    if (worldPos !== null) this.scanRoot.getParent().getTransform().setWorldPosition(worldPos)
+  }
+
+  private showScan(visible: boolean): void {
+    this.scanRoot.enabled = visible
+  }
+
+  isScanVisible(): boolean {
+    return this.scanRoot.enabled
+  }
+
+  /** Show the rewind slider with its centre at a world position, or hide it with `null`. */
+  showSliderAt(worldPos: vec3 | null): void {
+    this.showSlider(worldPos !== null)
+    if (worldPos !== null) this.sliderRoot.getParent().getTransform().setWorldPosition(worldPos)
+  }
+
+  private showSlider(visible: boolean): void {
+    this.sliderRoot.enabled = visible
+    if (!visible) this.sliderHolding = false
+  }
+
+  isSliderVisible(): boolean {
+    return this.sliderRoot.enabled
+  }
+
+  /** Move the slider knob (0 exploded to 1 assembled) without it counting as a user drag. */
+  setSliderValue(v: number, animate: boolean = false): void {
+    this.sliderHolding = false
+    const c = Math.max(0, Math.min(1, v))
+    if (animate) this.slider.updateCurrentValue(c, true)
+    else this.slider.resetToValue(c)
+  }
+
+  getSliderValue(): number {
+    return this.slider.knobValue
   }
 
   showMessage(text: string | null): void {

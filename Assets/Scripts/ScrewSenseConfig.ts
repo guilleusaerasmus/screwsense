@@ -192,6 +192,34 @@ export const EXPLODED_OFFSET: { [id: string]: vec3 } = {
   back: new vec3(0, 0, -28)
 }
 
+// Paper manual (phase 3): an A4 page with a line drawing of the finished bedside table.
+export const A4_CM = new vec2(21, 29.7)
+// Scale of the drawing on the page; the scan grows it to 1 (life size).
+export const PAGE_DRAWING_SCALE = 0.4
+export const SCAN_SECONDS = 2.0
+// Oblique line drawing in life-size cm: x right, y up, origin = bottom centre of the front face.
+// Each entry is a segment [x1, y1, x2, y2].
+export const DRAWING_LINES: number[][] = [
+  // front face
+  [-18.2, 0, 18.2, 0],
+  [18.2, 0, 18.2, 50],
+  [18.2, 50, -18.2, 50],
+  [-18.2, 50, -18.2, 0],
+  // inside: underside of the top panel, top of the bottom panel, inner sides
+  [-16.4, 48.2, 16.4, 48.2],
+  [-16.4, 6.8, 16.4, 6.8],
+  [-16.4, 6.8, -16.4, 48.2],
+  [16.4, 6.8, 16.4, 48.2],
+  // depth (oblique): back edges and the three visible connectors
+  [-9.2, 57, 27.2, 57],
+  [27.2, 57, 27.2, 7],
+  [-18.2, 50, -9.2, 57],
+  [18.2, 50, 27.2, 57],
+  [18.2, 0, 27.2, 7]
+]
+// Centre of the drawing's bounding box (used to centre it on the page).
+export const DRAWING_CENTER = new vec2(4.5, 32)
+
 export function panelDef(id: PanelId): PanelDef {
   return PANELS.filter((p) => p.id === id)[0]
 }

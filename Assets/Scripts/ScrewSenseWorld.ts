@@ -10,13 +10,19 @@ import {Interactable} from "SpectaclesInteractionKit.lspkg/Components/Interactio
 import {InteractableManipulation} from "SpectaclesInteractionKit.lspkg/Components/Interaction/InteractableManipulation/InteractableManipulation"
 import Event from "SpectaclesInteractionKit.lspkg/Utils/Event"
 import {
+  A4_CM,
   COLORS,
+  DRAWING_CENTER,
+  DRAWING_LINES,
+  EXPLODED_OFFSET,
+  PAGE_DRAWING_SCALE,
   PANELS,
   PARTS,
   PanelDef,
   PanelId,
   PartDef,
   PartId,
+  SCAN_SECONDS,
   clamp01,
   easeInOut,
   eulerDeg,
@@ -55,6 +61,11 @@ interface SlotRt {
   ghost: RenderMeshVisual
   edges: RenderMeshVisual[]
   active: boolean
+}
+
+interface DrawingBar {
+  ink: RenderMeshVisual
+  glow: RenderMeshVisual
 }
 
 interface PartRt {
@@ -152,6 +163,16 @@ export class ScrewSenseWorld extends BaseScriptComponent {
   private holePulse: SceneObject[] = []
   private built = false
 
+  // Phase 3: paper manual with its drawing, and the rewind model.
+  private drawingRoot: SceneObject
+  private drawingBars: DrawingBar[] = []
+  private scanning = false
+  private scanned = false
+  private rewindRoot: SceneObject
+  private rewindPieces: {[id: string]: SceneObject} = {}
+  private rewindShown = false
+  private rewindK = 1
+
   onAwake(): void {
     this.root = this.sceneObject
     this.build()
@@ -171,6 +192,8 @@ export class ScrewSenseWorld extends BaseScriptComponent {
     for (const def of PARTS) this.buildPart(def)
     for (const def of PANELS) this.buildPanel(def)
     for (const def of PANELS) this.buildSlot(def)
+    this.buildManual()
+    this.buildRewind()
     this.resetPanels(false)
     this.resetParts(false)
     this.setTrayVisible(false)
@@ -228,12 +251,14 @@ export class ScrewSenseWorld extends BaseScriptComponent {
   private buildTable(): void {
     this.tableRoot = global.scene.createSceneObject("Table")
     this.tableRoot.setParent(this.root)
-    // 160 x 100 cm top, 75 cm high (wide enough to lay all five panels flat on the left
-    // half); origin of the world root is the top surface centre.
-    this.prim(this.tableRoot, "Top", "box", new vec3(160, 4, 100), new vec3(0, -2, 0), COLORS.table, this.solidMat)
+    // 160 x 130 cm top, 75 cm high: wide enough to lay all five panels flat on the left half
+    // (z -50 to 50) with the paper manual in front of them (z 50 to 80). The origin of the
+    // world root is the table's reference point on the top surface; the top extends
+    // 30 cm further towards the user than behind it.
+    this.prim(this.tableRoot, "Top", "box", new vec3(160, 4, 130), new vec3(0, -2, 15), COLORS.table, this.solidMat)
     const legSize = new vec3(5, 71, 5)
     const lx = 75
-    const lz = 45
+    const lz = 60
     for (const sx of [-1, 1]) {
       for (const sz of [-1, 1]) {
         this.prim(
@@ -241,7 +266,7 @@ export class ScrewSenseWorld extends BaseScriptComponent {
           "Leg",
           "box",
           legSize,
-          new vec3(sx * lx, -4 - 35.5, sz * lz),
+          new vec3(sx * lx, -4 - 35.5, 15 + sz * lz),
           COLORS.tableLeg,
           this.solidMat
         )
@@ -487,6 +512,247 @@ export class ScrewSenseWorld extends BaseScriptComponent {
 
   private applyFlip(p: PanelRt): void {
     p.visual.getTransform().setLocalRotation(p.flipped ? eulerDeg(180, 0, 0) : quat.quatIdentity())
+  }
+
+  // ------------------------------------------------------------------ manual (phase 3)
+  /** The A4 page lying on the table with the bedside table drawn on it. */
+  private buildManual(): void {
+    const c = this.localPos(this.manualAnchor)
+    const page = this.prim(
+      this.root,
+      "ManualPage",
+      "box",
+      new vec3(A4_CM.x, 0.3, A4_CM.y),
+      c.add(new vec3(0, 0.15, 0)),
+      COLORS.paper,
+      this.unlitMat
+    )
+    page.sceneObject.getTransform().setLocalPosition(c.add(new vec3(0, 0.15, 0)))
+    const ink = new vec4(0.1, 0.18, 0.4, 1)
+
+    const title = global.scene.createSceneObject("ManualTitle")
+    title.setParent(this.root)
+    title.getTransform().setLocalPosition(c.add(new vec3(0, 0.35, -A4_CM.y / 2 + 2.6)))
+    title.getTransform().setLocalRotation(eulerDeg(-90, 0, 0))
+    const t = title.createComponent("Component.Text") as Text
+    t.text = "Bedside table"
+    t.size = 60
+    t.textFill.color = ink
+    t.depthTest = true
+    t.horizontalAlignment = HorizontalAlignment.Center
+    t.verticalAlignment = VerticalAlignment.Center
+    t.horizontalOverflow = HorizontalOverflow.Overflow
+    t.verticalOverflow = VerticalOverflow.Overflow
+    t.layoutRect = Rect.create(-8, 8, -1.5, 1.5)
+    ;(t as Text & {weight?: number}).weight = 700
+
+    // The drawing: ink bars on the page; glowing copies take over when it lifts off.
+    this.drawingRoot = global.scene.createSceneObject("ManualDrawing")
+    this.drawingRoot.setParent(this.root)
+    for (const seg of DRAWING_LINES) {
+      const dx = seg[2] - seg[0]
+      const dy = seg[3] - seg[1]
+      const len = Math.sqrt(dx * dx + dy * dy) + 1.2
+      const mid = new vec3((seg[0] + seg[2]) / 2, (seg[1] + seg[3]) / 2, 0)
+      const rot = eulerDeg(0, 0, (Math.atan2(dy, dx) * 180) / Math.PI)
+      const size = new vec3(len, 1.2, 0.4)
+      this.drawingBars.push({
+        ink: this.prim(this.drawingRoot, "Line", "box", size, mid, ink, this.unlitMat, rot),
+        glow: this.prim(this.drawingRoot, "LineGlow", "box", size, mid, COLORS.ghostEdge.uniformScale(0), this.glowMat, rot)
+      })
+    }
+    this.resetManual()
+  }
+
+  private drawingPagePose(): {pos: vec3; rot: quat; scale: number} {
+    const s = PAGE_DRAWING_SCALE
+    const c = this.localPos(this.manualAnchor)
+    // Lying flat, the drawing's up points to the back of the table.
+    return {
+      pos: c.add(new vec3(-DRAWING_CENTER.x * s, 0.5, DRAWING_CENTER.y * s)),
+      rot: eulerDeg(-90, 0, 0),
+      scale: s
+    }
+  }
+
+  private drawingFinalPose(): {pos: vec3; rot: quat; scale: number} {
+    // Standing at life size against the front of the hologram.
+    return {pos: this.localPos(this.cabinetAnchor).add(new vec3(0, 0, 17.5)), rot: quat.quatIdentity(), scale: 1}
+  }
+
+  private applyDrawingPose(pos: vec3, rot: quat, scale: number): void {
+    const tr = this.drawingRoot.getTransform()
+    tr.setLocalPosition(pos)
+    tr.setLocalRotation(rot)
+    tr.setLocalScale(vec3.one().uniformScale(scale))
+  }
+
+  private setDrawingGlow(g: number): void {
+    for (const b of this.drawingBars) {
+      ScrewSenseWorld.tint(b.glow, new vec4(COLORS.ghostEdge.x * g, COLORS.ghostEdge.y * g, COLORS.ghostEdge.z * g, 1))
+      b.ink.sceneObject.enabled = g <= 0
+      b.glow.sceneObject.enabled = g > 0
+    }
+  }
+
+  /** Put the drawing back on the page, ready to be scanned. */
+  resetManual(): void {
+    this.cancelTween("scan")
+    this.scanning = false
+    this.scanned = false
+    const p = this.drawingPagePose()
+    this.applyDrawingPose(p.pos, p.rot, p.scale)
+    this.drawingRoot.enabled = true
+    this.setDrawingGlow(0)
+  }
+
+  /**
+   * The scan: the drawing lifts off the page, grows and stands up while it turns into light,
+   * then the life-size hologram appears where it settles. Takes SCAN_SECONDS.
+   */
+  playScan(done?: () => void): void {
+    if (this.scanning) return
+    this.scanning = true
+    const from = this.drawingPagePose()
+    const to = this.drawingFinalPose()
+    let hologramOn = false
+    this.tween(
+      "scan",
+      SCAN_SECONDS,
+      (k) => {
+        const e = easeInOut(clamp01((k - 0.15) / 0.7))
+        const lift = 14 * Math.sin(Math.PI * clamp01(k / 0.85))
+        const pos = vec3.lerp(from.pos, to.pos, e).add(new vec3(0, lift, 0))
+        this.applyDrawingPose(pos, quat.slerp(from.rot, to.rot, e), from.scale + (to.scale - from.scale) * e)
+        let g = clamp01((k - 0.08) / 0.17)
+        if (k > 0.85) g *= 1 - (k - 0.85) / 0.15
+        this.setDrawingGlow(g)
+        if (k >= 0.85) {
+          if (!hologramOn) {
+            hologramOn = true
+            this.setHologramVisible(this.panelsDraggable)
+          }
+          const f = clamp01((k - 0.85) / 0.15)
+          for (const id in this.slots) {
+            const sl = this.slots[id]
+            ScrewSenseWorld.tint(sl.ghost, new vec4(COLORS.ghost.x, COLORS.ghost.y, COLORS.ghost.z, COLORS.ghost.w * f))
+          }
+        }
+      },
+      () => {
+        this.drawingRoot.enabled = false
+        this.scanning = false
+        this.scanned = true
+        for (const id in this.slots) ScrewSenseWorld.tint(this.slots[id].ghost, COLORS.ghost)
+        if (done) done()
+      }
+    )
+  }
+
+  isScanning(): boolean {
+    return this.scanning
+  }
+
+  hasScanned(): boolean {
+    return this.scanned
+  }
+
+  /** True while the drawing still lies on the page (before the scan). */
+  isDrawingOnPage(): boolean {
+    return this.drawingRoot.enabled && !this.scanning
+  }
+
+  drawingWorldPos(): vec3 {
+    return this.drawingRoot.getTransform().getWorldPosition()
+  }
+
+  isHologramVisible(): boolean {
+    return this.hologramVisible
+  }
+
+  manualWorldPos(): vec3 {
+    return this.manualAnchor.getTransform().getWorldPosition()
+  }
+
+  /** World position of a point on the table, in table space (x right, y up, z towards the user). */
+  tableWorldPoint(local: vec3): vec3 {
+    return this.root.getTransform().getWorldTransform().multiplyPoint(local)
+  }
+
+  // ------------------------------------------------------------------ rewind (phase 3)
+  /** Five solid pieces standing for the whole bedside table; they never touch the real panels. */
+  private buildRewind(): void {
+    this.rewindRoot = global.scene.createSceneObject("RewindModel")
+    this.rewindRoot.setParent(this.root)
+    for (const def of PANELS) {
+      const piece = global.scene.createSceneObject("Rewind_" + def.id)
+      piece.setParent(this.rewindRoot)
+      this.prim(piece, "Body", "box", def.size, vec3.zero(), COLORS.panelFinal, this.solidMat)
+      this.addPerimeter(piece, [], def.size, COLORS.slot, this.glowMat, 0.4)
+      this.rewindPieces[def.id] = piece
+    }
+    this.rewindRoot.enabled = false
+    this.poseRewind(1)
+  }
+
+  /** k = 1: assembled, k = 0: fully exploded. */
+  private poseRewind(k: number): void {
+    this.rewindK = k
+    for (const def of PANELS) {
+      const a = this.assembledPose(def)
+      const off = EXPLODED_OFFSET[def.id].uniformScale(1 - k)
+      const tr = this.rewindPieces[def.id].getTransform()
+      tr.setLocalPosition(a.pos.add(off))
+      tr.setLocalRotation(a.rot)
+    }
+  }
+
+  /** Show the whole bedside table at `k` (0 exploded to 1 assembled); the real hologram steps aside. */
+  showRewind(k: number): void {
+    this.cancelTween("rewind")
+    if (!this.rewindShown) {
+      this.rewindShown = true
+      this.rewindRoot.enabled = true
+      for (const id in this.panels) if (this.panels[id].assembled) this.panels[id].root.enabled = false
+      for (const id in this.slots) this.slots[id].root.enabled = false
+    }
+    this.poseRewind(clamp01(k))
+  }
+
+  /** Slide the model to `k`, then hand the view back to the real progress. */
+  endRewind(k: number, done?: () => void): void {
+    if (!this.rewindShown) {
+      if (done) done()
+      return
+    }
+    const from = this.rewindK
+    this.tween("rewind", 0.35, (t) => this.poseRewind(from + (clamp01(k) - from) * easeInOut(t)), () => {
+      this.cancelRewind()
+      if (done) done()
+    })
+  }
+
+  /** Drop the model at once and restore the real panels and hologram. */
+  cancelRewind(): void {
+    this.cancelTween("rewind")
+    if (!this.rewindShown) return
+    this.rewindShown = false
+    this.rewindRoot.enabled = false
+    for (const id in this.panels) this.panels[id].root.enabled = true
+    this.setHologramVisible(this.hologramVisible)
+  }
+
+  isRewindShown(): boolean {
+    return this.rewindShown
+  }
+
+  rewindValue(): number {
+    return this.rewindK
+  }
+
+  /** World position of a model piece (tests). */
+  rewindPieceWorldPos(id: PanelId): vec3 {
+    return this.rewindPieces[id].getTransform().getWorldPosition()
   }
 
   // ------------------------------------------------------------------ poses

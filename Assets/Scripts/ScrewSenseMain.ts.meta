@@ -31,6 +31,8 @@
     autoStart: false
     cardOffset: false
     matchTrack: false
+    scanPos: false
+    sliderPos: false
     snapTrack: false
     ui: false
     world: false
@@ -51,6 +53,8 @@
       snapTrack: !<reference.AudioTrackAsset> 00000000-0000-0000-0000-000000000000
       autoStart: true
       cardOffset: !<Vec3> {x: 2.000000, y: 17.000000, z: 12.000000}
+      scanPos: !<Vec3> {x: -38.000000, y: 8.000000, z: 60.000000}
+      sliderPos: !<Vec3> {x: 30.000000, y: 4.000000, z: 74.000000}
   ScriptTypes:
     -
       {}
@@ -65,6 +69,8 @@
     - '// @input Asset.AudioTrackAsset snapTrack {"hint":"Soft click when something snaps into place."}'
     - '// @ui {"widget":"group_end"}'
     - '// @ui {"widget":"group_start", "label":"Settings"}'
-    - '// @input bool autoStart = true {"hint":"Start step 1 immediately (otherwise the user must pinch Scan)."}'
+    - '// @input bool autoStart {"hint":"Start step 1 immediately (otherwise the user must pinch Scan on the manual)."}'
     - '// @input vec3 cardOffset = {2,17,12} {"hint":"Where the step card hangs relative to the panel being worked on (cm)."}'
+    - '// @input vec3 scanPos = {-38,8,60} {"hint":"Scan button position in table space (cm), beside the paper manual."}'
+    - '// @input vec3 sliderPos = {30,4,74} {"hint":"Rewind slider centre in table space (cm), along the front edge under the hologram."}'
     - '// @ui {"widget":"group_end"}'

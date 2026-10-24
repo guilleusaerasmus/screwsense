@@ -39,11 +39,17 @@ export class ScrewSenseMain extends BaseScriptComponent {
   @ui.group_end
   @ui.group_start("Settings")
   @input
-  @hint("Start step 1 immediately (otherwise the user must pinch Scan).")
-  autoStart: boolean = true
+  @hint("Start step 1 immediately (otherwise the user must pinch Scan on the manual).")
+  autoStart: boolean = false
   @input
   @hint("Where the step card hangs relative to the panel being worked on (cm).")
   cardOffset: vec3 = new vec3(2, 17, 12)
+  @input
+  @hint("Scan button position in table space (cm), beside the paper manual.")
+  scanPos: vec3 = new vec3(-38, 8, 60)
+  @input
+  @hint("Rewind slider centre in table space (cm), along the front edge under the hologram.")
+  sliderPos: vec3 = new vec3(30, 4, 74)
   @ui.group_end
 
   private step = 0
@@ -53,6 +59,8 @@ export class ScrewSenseMain extends BaseScriptComponent {
   private hintTimer: DelayedCallbackEvent
   private token = 0
   private placed: PanelId[] = []
+  private rewinding = false
+  private releaseTimer: DelayedCallbackEvent
 
   onAwake(): void {
     ;(global as any).screwSense = this
@@ -61,6 +69,8 @@ export class ScrewSenseMain extends BaseScriptComponent {
     this.audio["snap"] = this.makeAudio(this.snapTrack)
     this.hintTimer = this.createEvent("DelayedCallbackEvent")
     this.hintTimer.bind(() => this.ui.setCardHint(null))
+    this.releaseTimer = this.createEvent("DelayedCallbackEvent")
+    this.releaseTimer.bind(() => this.finishRewind())
     this.createEvent("OnStartEvent").bind(() => this.onStart())
   }
 
@@ -72,6 +82,10 @@ export class ScrewSenseMain extends BaseScriptComponent {
     this.ui.onDone.add(() => this.onDone())
     this.ui.onBack.add(() => this.onBack())
     this.ui.onFlip.add(() => this.onFlip())
+    this.ui.onScan.add(() => this.scan())
+    this.ui.onRewindGrab.add(() => (this.rewinding = true))
+    this.ui.onRewindMove.add((k) => this.rewindTo(k))
+    this.ui.onRewindRelease.add(() => this.rewindRelease())
     this.restart()
   }
 
@@ -112,12 +126,16 @@ export class ScrewSenseMain extends BaseScriptComponent {
   // ------------------------------------------------------------------ flow
   /** Reset everything to the start of the experience (also used by tests). */
   restart(): void {
+    this.rewinding = false
+    this.world.cancelRewind()
+    this.world.resetManual()
     this.world.resetPanels(false)
     this.world.resetParts(false)
     this.world.setTrayVisible(false)
     this.world.clearHoles()
     this.world.setAllSolidFinal(false)
-    this.world.setHologramVisible(this.dragMode())
+    // The hologram only exists once the manual has been scanned (or at once with autoStart).
+    this.world.setHologramVisible(this.dragMode() && this.autoStart)
     this.world.setActiveSlots([])
     this.placed = []
     this.ui.showFlip(null)
@@ -126,12 +144,70 @@ export class ScrewSenseMain extends BaseScriptComponent {
     this.ui.showDoneBack(false)
     this.step = 0
     this.phase = "idle"
+    this.ui.showScanAt(this.autoStart ? null : this.world.tableWorldPoint(this.scanPos))
+    this.ui.showSliderAt(this.autoStart ? this.world.tableWorldPoint(this.sliderPos) : null)
+    this.syncSlider()
     if (this.autoStart) this.beginStep(0)
   }
 
-  /** Begin the guided assembly (called by Scan in phase 3, or at start). */
+  /** Pinching Scan: the drawing becomes the hologram, then the guided assembly starts at step 1. */
+  scan(): void {
+    if (this.phase !== "idle" || this.world.isScanning()) return
+    this.phase = "busy"
+    this.ui.showScanAt(null)
+    this.play("snap")
+    this.world.playScan(() => {
+      this.ui.showSliderAt(this.world.tableWorldPoint(this.sliderPos))
+      this.syncSlider()
+      this.beginStep(0)
+    })
+  }
+
+  // ------------------------------------------------------------------ rewind (phase 3)
+  /** Progress as a 0..1 value: completed steps out of all steps (the slider's resting value). */
+  getProgress(): number {
+    if (this.phase === "finished") return 1
+    if (this.phase === "idle") return 0
+    return this.step / TOTAL_STEPS
+  }
+
+  /** Move the slider knob to the current progress (unless the user is holding it). */
+  private syncSlider(animate: boolean = false): void {
+    if (this.rewinding) return
+    this.ui.setSliderValue(this.getProgress(), animate)
+  }
+
+  /** Show the whole bedside table at `k` (0 exploded, 1 assembled). Progress is untouched. */
+  rewindTo(k: number): void {
+    if (this.phase === "idle") return
+    this.rewinding = true
+    this.releaseTimer.enabled = false
+    this.world.showRewind(k)
+  }
+
+  /** The slider was let go: the model and the knob return to the current progress. */
+  rewindRelease(): void {
+    if (!this.rewinding) return
+    // Let the slider finish its own drag-end handling before its knob is moved back.
+    this.releaseTimer.enabled = true
+    this.releaseTimer.reset(0.05)
+  }
+
+  private finishRewind(): void {
+    const p = this.getProgress()
+    this.world.endRewind(p)
+    this.rewinding = false
+    this.syncSlider(true)
+  }
+
+  /** True while the rewind model is on show (tests). */
+  isRewinding(): boolean {
+    return this.rewinding
+  }
+
+  /** Begin the guided assembly (from the start state). */
   start(): void {
-    if (this.phase === "idle") this.beginStep(0)
+    if (this.phase === "idle") this.scan()
   }
 
   private currentStep(): StepDef {
@@ -153,6 +229,7 @@ export class ScrewSenseMain extends BaseScriptComponent {
     this.ui.showDoneBack(true)
     this.ui.setDoneReady(false)
     this.ui.setBackEnabled(i > 0)
+    this.syncSlider(true)
   }
 
   private showCardFor(s: StepDef): void {
@@ -321,6 +398,7 @@ export class ScrewSenseMain extends BaseScriptComponent {
     this.ui.setDoneReady(false)
     this.ui.setBackEnabled(true)
     this.play("match")
+    this.syncSlider(true)
   }
 
   private onBack(): void {
@@ -361,6 +439,7 @@ export class ScrewSenseMain extends BaseScriptComponent {
       this.ui.showDoneBack(true)
       this.refreshPlaceUi()
       this.ui.setBackEnabled(true)
+      this.syncSlider(true)
     })
   }
 

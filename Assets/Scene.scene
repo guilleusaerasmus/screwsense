@@ -5,9 +5,9 @@
     - !<own> 0005641c-028d-459a-0000-000000014b4d
     - !<own> f5d74682-203a-4970-81ea-9fa7b88c96bb
     - !<own> 20e6ed30-0296-4188-8f44-35cf52483129
-    - !<own> 60567222-a90b-4bcd-b122-122026b5f6ea
     - !<own> d29d04b0-8648-41ed-b7a0-2641dcbadb26
     - !<own> f6fa4e29-4dcd-4553-a445-7b1656e70f46
+    - !<own> dc384c2e-2d38-4479-9a28-fa27a501b6c8
   layers: !<Layers/267ee9a7-aff2-4f9d-9a49-f71214747d03>
     userLayers:
       - id: 1
@@ -542,8 +542,9 @@
   Enabled: true
   ScriptAsset: !<reference> 7853aefd-e6b5-41de-9df9-94d54df3782e
   ScriptInputsDefault:
-    autoStart: true
     cardOffset: true
+    scanPos: true
+    sliderPos: true
   ScriptTypesDefault:
     {}
   ScriptInputs:
@@ -553,8 +554,10 @@
       matchTrack: !<reference.AudioTrackAsset> fa21f306-a03d-4790-b40d-d1e7f1212915
       wrongTrack: !<reference.AudioTrackAsset> a3212e60-0145-4fb0-bd84-aa605c8e24cc
       snapTrack: !<reference.AudioTrackAsset> b2d06b4f-57e6-45e7-b91e-9cdac54d334f
-      autoStart: true
+      autoStart: false
       cardOffset: !<Vec3> {x: 2.000000, y: 17.000000, z: 12.000000}
+      scanPos: !<Vec3> {x: -38.000000, y: 8.000000, z: 60.000000}
+      sliderPos: !<Vec3> {x: 30.000000, y: 4.000000, z: 74.000000}
   ScriptTypes:
     "":
       {}
@@ -1018,6 +1021,8 @@
       backOffset: !<Vec3> {x: 15.000000, y: -8.000000, z: 0.000000}
       doneSize: !<float> 8.000000
       backWidth: !<float> 6.000000
+      scanSize: !<float> 8.000000
+      sliderLength: !<float> 30.000000
       uiScale: 1.600000
   ScriptTypes:
     "":
@@ -1137,21 +1142,6 @@
   ScriptTypes:
     "":
       {}
-- !<SceneObject/60567222-a90b-4bcd-b122-122026b5f6ea>
-  PrefabRemaps:
-    []
-  Name: AiPreviewAgent Handler
-  Enabled: true
-  Layers: 1
-  LocalTransform: !<TransformEntity>
-    Position: {x: 0.000000, y: 0.000000, z: 0.000000}
-    Rotation: {x: 0.000000, y: 0.000000, z: 0.000000}
-    Scale: {x: 1.000000, y: 1.000000, z: 1.000000}
-    HasSegmentScaleCompensation: false
-  Children:
-    []
-  Components:
-    - !<own> dbc60c67-d4c9-4f64-91cc-cba33ca91da3
 - !<ScriptComponent/62967490-d66e-4479-8829-e5c9da5b5b57>
   PrefabRemaps:
     []
@@ -2170,6 +2160,22 @@
     []
   Components:
     []
+- !<ScriptComponent/c891309f-6c99-46ae-b7e6-485660500691>
+  PrefabRemaps:
+    []
+  Name: AgentInteractScript
+  Enabled: true
+  ScriptAsset: !<reference> 29091811-e792-46be-bfa4-28ddec5f11be
+  ScriptInputsDefault:
+    {}
+  ScriptTypesDefault:
+    {}
+  ScriptInputs:
+    "":
+      {}
+  ScriptTypes:
+    "":
+      {}
 - !<ScriptComponent/c8e031d3-a8a1-468a-a419-427f8556de4c>
   PrefabRemaps:
     []
@@ -2195,6 +2201,22 @@
       directColliderExitRadius: 1.500000
       directDragThreshold: !<float> 3.000000
       forcePokeOnNonDominantPalmProximity: false
+  ScriptTypes:
+    "":
+      {}
+- !<ScriptComponent/ca09a900-e9d1-40e4-a6db-160ca77144a9>
+  PrefabRemaps:
+    []
+  Name: AgentInspectScript
+  Enabled: true
+  ScriptAsset: !<reference> 0b25079c-f5bf-4c6d-96c4-f43b89dfa213
+  ScriptInputsDefault:
+    {}
+  ScriptTypesDefault:
+    {}
+  ScriptInputs:
+    "":
+      {}
   ScriptTypes:
     "":
       {}
@@ -2457,22 +2479,22 @@
     - !<own> f74a6bbb-4fba-4d8b-9b4e-64dd1c3e9ac3
   Components:
     []
-- !<ScriptComponent/dbc60c67-d4c9-4f64-91cc-cba33ca91da3>
+- !<SceneObject/dc384c2e-2d38-4479-9a28-fa27a501b6c8>
   PrefabRemaps:
     []
-  Name: AgentInspectScript
+  Name: AiPreviewAgent Handler
   Enabled: true
-  ScriptAsset: !<reference> 0b25079c-f5bf-4c6d-96c4-f43b89dfa213
-  ScriptInputsDefault:
-    {}
-  ScriptTypesDefault:
-    {}
-  ScriptInputs:
-    "":
-      {}
-  ScriptTypes:
-    "":
-      {}
+  Layers: 1
+  LocalTransform: !<TransformEntity>
+    Position: {x: 0.000000, y: 0.000000, z: 0.000000}
+    Rotation: {x: 0.000000, y: 0.000000, z: 0.000000}
+    Scale: {x: 1.000000, y: 1.000000, z: 1.000000}
+    HasSegmentScaleCompensation: false
+  Children:
+    []
+  Components:
+    - !<own> ca09a900-e9d1-40e4-a6db-160ca77144a9
+    - !<own> c891309f-6c99-46ae-b7e6-485660500691
 - !<SceneObject/dcc36a33-e23d-48f3-8e96-f9c9fd3cd030>
   PrefabRemaps:
     []
@@ -2542,7 +2564,7 @@
   Enabled: true
   Layers: 1
   LocalTransform: !<TransformEntity>
-    Position: {x: -67.000000, y: 0.000000, z: 44.000000}
+    Position: {x: -60.000000, y: 0.000000, z: 58.000000}
     Rotation: {x: 0.000000, y: 0.000000, z: 0.000000}
     Scale: {x: 1.000000, y: 1.000000, z: 1.000000}
     HasSegmentScaleCompensation: false
