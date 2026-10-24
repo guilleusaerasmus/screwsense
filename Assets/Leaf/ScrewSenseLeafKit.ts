@@ -45,7 +45,7 @@ export async function dropPart(ix: ScrewSenseLeafInteractor, part: string, outli
   let lastError: unknown = null
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      await ix.dragTo(target, dest)
+      await ix.dragTo(target, dest, 2)
       lastError = null
       break
     } catch (e) {
@@ -71,7 +71,7 @@ export async function dragPanel(ix: ScrewSenseLeafInteractor, id: string, offset
   let lastError: unknown = null
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      await ix.dragTo(target, dest, 0.8, 8000)
+      await ix.dragTo(target, dest, 2, 8000)
       lastError = null
       break
     } catch (e) {

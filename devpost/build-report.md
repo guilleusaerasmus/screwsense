@@ -1,6 +1,17 @@
 # ScrewSense build report
 
+**LEAF status (session 4, 24 Oct 2026): criteria 1 to 7 all PASSED, see "Session 4" below.** Older status text follows.
+
 **Status (session 3, 24 Oct): all three phases are built and compile. Phase 3 (manual, Scan, transformation, rewind slider) was checked in the preview with screenshots. No LEAF scenario was run in this session (by agreement), so criteria 1, 2 and 7 have a written but unrun LEAF test, and criteria 3, 4 and 6 rest on LEAF runs from earlier sessions, before this session's changes. Criterion 5 (panel drag, flip) is still not verified at all.** The editor stayed responsive for the whole session (no freeze).
+
+## Session 4 (24 Oct): LEAF verification, final result
+**All 7 criteria PASSED in LEAF on 24 Oct 2026 (preview, Phase 2/3 flow with Scan), one scenario at a time, in this order:** c1-start-view PASSED, c2-scan-to-hologram PASSED (4 s), c3-right-match FAILED then PASSED after the fix below, c4-wrong-match PASSED, c5-panels-and-flip PASSED, c7-rewind-slider PASSED (26 s, real knob drag with the interactor), c6-flow-to-finish PASSED (91 s). No freeze; the editor stayed responsive. (An earlier attempt the same day was blocked because the LEAF panel was closed; the panel was then opened once with `open_leaf_panel`.)
+
+**What changed:** only the test kit, `Assets/Leaf/ScrewSenseLeafKit.ts`: the drag tolerance in `dropPart` and `dragPanel` went from 0.8 cm to 2 cm. Cause of the c3 failure: `dragTo: stopped 0.9 cm from the destination`, three attempts. The app snaps within `SNAP_CM = 5`, so the test was too strict (the closed-loop drag stalls at about 0.9 cm), not the app. Only c3 was re-run after the recompile (then c4, c5, c7, c6 ran on the new build; c1 and c2 ran before it and are unaffected by the kit change). No app code or scene change. The slider knob was grabbed by the simulated hand this time, so it did not need to be made bigger; a larger knob would still be good design for real hands (not done).
+
+**State left:** `LeafIndex` disabled, project saved. The LEAF panel is still open: there is no tool or editor API to close it, close it by hand if wanted. Lens needs a refresh after a recompile; the first `run_leaf_scenario` call for c6 timed out at the tool level but the scenario ran and passed (see log, 91 s).
+
+The statuses below in "Session 3" and the table are from the earlier session; **the LEAF results above supersede them.**
 
 ## Session 3: what was done
 Project folder: `C:\Users\guill\LensProjects\lens` (outside OneDrive). `LeafIndex` stayed disabled, the LEAF panel was never opened, no scenario was run, no git command was run. Scene saved with `project.save()` after each scene change.
