@@ -29,6 +29,7 @@
   PackagePolicy: CanBeUnpacked
   ScriptInputsHidden:
     autoStart: false
+    captionPos: false
     cardOffset: false
     matchTrack: false
     scanPos: false
@@ -55,6 +56,7 @@
       cardOffset: !<Vec3> {x: 2.000000, y: 17.000000, z: 12.000000}
       scanPos: !<Vec3> {x: -38.000000, y: 8.000000, z: 60.000000}
       sliderPos: !<Vec3> {x: 30.000000, y: 4.000000, z: 74.000000}
+      captionPos: !<Vec3> {x: 0.000000, y: 95.000000, z: -45.000000}
   ScriptTypes:
     -
       {}
@@ -73,4 +75,5 @@
     - '// @input vec3 cardOffset = {2,17,12} {"hint":"Where the step card hangs relative to the panel being worked on (cm)."}'
     - '// @input vec3 scanPos = {-38,8,60} {"hint":"Scan button position in table space (cm), beside the paper manual."}'
     - '// @input vec3 sliderPos = {30,4,74} {"hint":"Rewind slider centre in table space (cm), along the front edge under the hologram."}'
+    - '// @input vec3 captionPos = {-34,38,-50} {"hint":"Demo caption position in table space (cm): above the table, behind the action."}'
     - '// @ui {"widget":"group_end"}'

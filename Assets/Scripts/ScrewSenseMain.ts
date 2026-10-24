@@ -50,9 +50,13 @@ export class ScrewSenseMain extends BaseScriptComponent {
   @input
   @hint("Rewind slider centre in table space (cm), along the front edge under the hologram.")
   sliderPos: vec3 = new vec3(30, 4, 74)
+  @input
+  @hint("Demo caption position in table space (cm): above the table, behind the action.")
+  captionPos: vec3 = new vec3(-34, 38, -50)
   @ui.group_end
 
   private step = 0
+  private demoMode = false
   private phase: Phase = "idle"
   private audio: {[k: string]: AudioComponent} = {}
   private plays: {[k: string]: number} = {}
@@ -104,6 +108,31 @@ export class ScrewSenseMain extends BaseScriptComponent {
     tr.setWorldRotation(quat.fromEulerAngles(0, yaw, 0))
   }
 
+  /**
+   * Demo framing: put the whole rig so the middle of the table sits `distance` cm in front of the
+   * preview camera, looking down at it (the camera's own pitch, kept between 30 and 55 degrees),
+   * with the rig turned to the camera's heading and the table shifted `shiftLeftCm` to the left in view. Call before restart().
+   */
+  placeForDemo(distance: number, lowerCm: number = 0, shiftLeftCm: number = 0): void {
+    const cam = WorldCameraFinderProvider.getInstance().getTransform()
+    const pos = cam.getWorldPosition()
+    const fwd = cam.getWorldRotation().multiplyVec3(new vec3(0, 0, -1))
+    const yaw = Math.atan2(-fwd.x, -fwd.z)
+    const down = Math.max(30, Math.min(55, (Math.asin(Math.max(-1, Math.min(1, -fwd.y))) * 180) / Math.PI))
+    const e = (down * Math.PI) / 180
+    const dir = new vec3(-Math.sin(yaw) * Math.cos(e), -Math.sin(e), -Math.cos(yaw) * Math.cos(e))
+    const tr = this.sceneObject.getTransform()
+    const tableLocal = tr.getInvertedWorldTransform().multiplyPoint(this.world.tableWorldPoint(vec3.zero()))
+    const rot = quat.fromEulerAngles(0, yaw, 0)
+    const target = pos.add(dir.uniformScale(distance)).sub(new vec3(0, lowerCm, 0))
+    const right = new vec3(Math.cos(yaw), 0, -Math.sin(yaw))
+    tr.setWorldRotation(rot)
+    tr.setWorldPosition(target.sub(right.uniformScale(shiftLeftCm)).sub(rot.multiplyVec3(tableLocal)))
+    // Normally "Assembled!" floats between the user and the table, outside the demo frame:
+    // hang it above the finished bedside table instead.
+    this.ui.messageAnchor.getTransform().setWorldPosition(this.world.tableWorldPoint(new vec3(38, 72, -5)))
+  }
+
   private makeAudio(track: AudioTrackAsset): AudioComponent {
     const obj = global.scene.createSceneObject("Audio")
     obj.setParent(this.sceneObject)
@@ -127,6 +156,7 @@ export class ScrewSenseMain extends BaseScriptComponent {
   /** Reset everything to the start of the experience (also used by tests). */
   restart(): void {
     this.rewinding = false
+    this.setDemoMode(false)
     this.world.cancelRewind()
     this.world.resetManual()
     this.world.resetPanels(false)
@@ -452,6 +482,26 @@ export class ScrewSenseMain extends BaseScriptComponent {
     const e = this.createEvent("DelayedCallbackEvent")
     e.bind(fn)
     e.reset(seconds)
+  }
+
+  // ------------------------------------------------------------------ demo captions
+  /** Demo flag (set by the demo-walkthrough scenario): caption cards are shown only while it is on. */
+  setDemoMode(on: boolean): void {
+    this.demoMode = on
+    if (!on) this.ui.showCaptionAt(null)
+  }
+
+  isDemoMode(): boolean {
+    return this.demoMode
+  }
+
+  /** Show a caption card above the table (demo mode only); `null` hides it. */
+  setCaption(text: string | null): void {
+    if (!this.demoMode || text === null) {
+      this.ui.showCaptionAt(null)
+      return
+    }
+    this.ui.showCaptionAt(text, this.world.tableWorldPoint(this.captionPos))
   }
 
   // ------------------------------------------------------------------ queries (tests)

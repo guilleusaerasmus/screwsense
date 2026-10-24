@@ -31,6 +31,8 @@
     backAnchor: false
     backOffset: false
     backWidth: false
+    captionSize: false
+    captionWidth: false
     cardAnchor: false
     cardWidth: false
     doneAnchor: false
@@ -60,6 +62,8 @@
       backWidth: !<float> 6.000000
       scanSize: !<float> 4.000000
       sliderLength: !<float> 10.000000
+      captionSize: !<float> 150.000000
+      captionWidth: !<float> 100.000000
       uiScale: 1.600000
   ScriptTypes:
     -
@@ -81,5 +85,7 @@
     - '// @input float backWidth = 6 {"hint":"Width of the Back button (cm)."}'
     - '// @input float scanSize = 8 {"hint":"Diameter of the Scan button in the world (cm)."}'
     - '// @input float sliderLength = 30 {"hint":"Length of the rewind slider track in the world (cm)."}'
+    - '// @input float captionSize = 120 {"hint":"Demo caption text size."}'
+    - '// @input float captionWidth = 76 {"hint":"Demo caption width (cm)."}'
     - '// @input float uiScale = 3 {"hint":"Uniform scale of every UI element: the table is read from about 1.5 m, so the UI is enlarged."}'
     - '// @ui {"widget":"group_end"}'

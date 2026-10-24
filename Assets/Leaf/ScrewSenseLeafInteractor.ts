@@ -3,7 +3,7 @@
 // releases it there (one continuous grab, like a real user).
 
 import {DefaultLeafInteractor} from "Leaf.lspkg/Interactors/interactor/DefaultLeafInteractor"
-import {awaitEventOnce, nextFrame, withTimeout} from "Leaf.lspkg/Utils/common/Utils"
+import {awaitEventOnce, nextFrame, sleep as sleepMs, withTimeout} from "Leaf.lspkg/Utils/common/Utils"
 import {Interactable} from "SpectaclesInteractionKit.lspkg/Components/Interaction/Interactable/Interactable"
 import {InteractorTriggerType} from "SpectaclesInteractionKit.lspkg/Core/Interactor/Interactor"
 
@@ -98,6 +98,89 @@ export class ScrewSenseLeafInteractor extends DefaultLeafInteractor {
       this.resetStartEndPoint()
       this.overrideDragVector = undefined
       throw e
+    }
+  }
+
+  /**
+   * One continuous slider grab for the demo: drag the knob through each goal in turn, pausing
+   * `holdMs` at each, then release. Same hard time limit per goal as dragSlider.
+   */
+  async dragSliderThrough(
+    target: Interactable,
+    read: () => number,
+    goals: number[],
+    worldLength: number,
+    holdMs: number,
+    tol: number = 0.03,
+    timeoutMs: number = 8000
+  ): Promise<void> {
+    try {
+      await withTimeout(
+        this.dragSliderThroughUnbounded(target, read, goals, worldLength, holdMs, tol, timeoutMs),
+        goals.length * (timeoutMs + holdMs) + 8000,
+        "dragSliderThrough: timed out (a drag event never fired)"
+      )
+    } catch (e) {
+      this.setTriggerType(InteractorTriggerType.None)
+      this.resetStartEndPoint()
+      this.overrideDragVector = undefined
+      throw e
+    }
+  }
+
+  private async dragSliderThroughUnbounded(
+    target: Interactable,
+    read: () => number,
+    goals: number[],
+    worldLength: number,
+    holdMs: number,
+    tol: number,
+    timeoutMs: number
+  ): Promise<void> {
+    const dragStarted = awaitEventOnce(target.onDragStart)
+    const dragEnded = awaitEventOnce(target.onDragEnd)
+    await this.enterHover(target)
+    await nextFrame()
+    await nextFrame()
+    this.setTriggerType(InteractorTriggerType.Select)
+    await nextFrame()
+    this.overrideDragVector = new vec3(0.001, 0, 0)
+    await dragStarted
+
+    const axis = target.getTransform().right
+    let goal = goals[0]
+    const unsubscribe = target.onDragUpdate.add(() => {
+      const err = goal - read()
+      const step = axis.uniformScale(Math.max(-1, Math.min(1, err * worldLength * 0.4)))
+      this.startPoint = this.startPoint.add(step)
+      this.endPoint = this.endPoint.add(step)
+    })
+
+    let worst = 0
+    for (const g of goals) {
+      goal = g
+      const t0 = getTime()
+      let settled = 0
+      while (getTime() - t0 < timeoutMs / 1000) {
+        await awaitEventOnce(target.onTriggerUpdate)
+        if (Math.abs(read() - goal) < tol) {
+          settled++
+          if (settled >= 3) break
+        } else {
+          settled = 0
+        }
+      }
+      worst = Math.max(worst, Math.abs(read() - goal))
+      await sleepMs(holdMs)
+    }
+    unsubscribe()
+    this.setTriggerType(InteractorTriggerType.None)
+    await dragEnded
+    this.resetStartEndPoint()
+    this.overrideDragVector = undefined
+    await this.exitHover()
+    if (worst >= tol) {
+      throw new Error("dragSliderThrough: missed a goal by " + worst.toFixed(2))
     }
   }
 

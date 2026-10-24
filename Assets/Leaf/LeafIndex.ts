@@ -7,6 +7,7 @@ import {ScrewSenseP2PanelScenario} from "./ScrewSenseP2PanelScenario"
 import {ScrewSenseP3StartScenario} from "./ScrewSenseP3StartScenario"
 import {ScrewSenseP3ScanScenario} from "./ScrewSenseP3ScanScenario"
 import {ScrewSenseP3RewindScenario} from "./ScrewSenseP3RewindScenario"
+import {ScrewSenseDemoScenario} from "./ScrewSenseDemoScenario"
 
 @component
 export class LeafIndex extends BaseScriptComponent {
@@ -18,6 +19,7 @@ export class LeafIndex extends BaseScriptComponent {
     {id: "c4-wrong-match", typename: ScrewSenseP1WrongScenario.getTypeName()},
     {id: "c5-panels-and-flip", typename: ScrewSenseP2PanelScenario.getTypeName()},
     {id: "c6-flow-to-finish", typename: ScrewSenseP1FlowScenario.getTypeName()},
-    {id: "c7-rewind-slider", typename: ScrewSenseP3RewindScenario.getTypeName()}
+    {id: "c7-rewind-slider", typename: ScrewSenseP3RewindScenario.getTypeName()},
+    {id: "demo-walkthrough", typename: ScrewSenseDemoScenario.getTypeName()}
   ]
 }

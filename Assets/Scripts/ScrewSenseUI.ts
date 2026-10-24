@@ -104,6 +104,12 @@ export class ScrewSenseUI extends BaseScriptComponent {
   @hint("Length of the rewind slider track in the world (cm).")
   sliderLength: number = 30
   @input
+  @hint("Demo caption text size.")
+  captionSize: number = 120
+  @input
+  @hint("Demo caption width (cm).")
+  captionWidth: number = 76
+  @input
   @hint("Uniform scale of every UI element: the table is read from about 1.5 m, so the UI is enlarged.")
   uiScale: number = 3
   @ui.group_end
@@ -124,6 +130,9 @@ export class ScrewSenseUI extends BaseScriptComponent {
   private flipButton: RectangleButton
   private flipRoot: SceneObject
   private messageText: Text
+  private captionRoot: SceneObject
+  private captionText: Text
+  private captionRecolor: DelayedCallbackEvent
   private cardRoot: SceneObject
   private doneRoot: SceneObject
   private backRoot: SceneObject
@@ -145,6 +154,7 @@ export class ScrewSenseUI extends BaseScriptComponent {
     this.buildMessage()
     this.buildScan()
     this.buildSlider()
+    this.buildCaption()
     this.showCard(false)
     this.showFlip(null)
     this.showDoneBack(false)
@@ -161,7 +171,7 @@ export class ScrewSenseUI extends BaseScriptComponent {
     const plate = this.cardRoot.createComponent(BackPlate.getTypeName()) as BackPlate
     // The plate initialises itself on OnStart and sets its dark default; recolour it just after.
     this.plateRecolor = this.createEvent("DelayedCallbackEvent")
-    this.plateRecolor.bind(() => this.colorPlate())
+    this.plateRecolor.bind(() => this.colorPlate(this.cardRoot))
     this.createEvent("OnStartEvent").bind(() => this.plateRecolor.reset(0.1))
 
     const content = this.child(this.cardRoot, "Content")
@@ -347,6 +357,38 @@ export class ScrewSenseUI extends BaseScriptComponent {
     this.messageText.textFill.color = new vec4(0.5, 1, 0.6, 1)
   }
 
+  /** Demo caption card: a large light plate with dark text floating above the table (demo flag only). */
+  private buildCaption(): void {
+    const anchor = global.scene.createSceneObject("CaptionAnchor")
+    anchor.setParent(this.sceneObject)
+    this.captionRoot = this.child(anchor, "Caption")
+    this.captionRoot.createComponent("Component.Canvas")
+    this.captionRoot.createComponent(Billboard.getTypeName())
+    const plate = this.captionRoot.createComponent(BackPlate.getTypeName()) as BackPlate
+    this.captionRecolor = this.createEvent("DelayedCallbackEvent")
+    this.captionRecolor.bind(() => this.colorPlate(this.captionRoot))
+    const content = this.child(this.captionRoot, "Content")
+    content.getTransform().setLocalPosition(new vec3(0, 0, 0.6))
+    const flex = content.createComponent(FlexLayout.getTypeName()) as FlexLayout
+    const w = this.captionWidth / this.uiScale
+    flex.width = w
+    flex.height = -1
+    flex.direction = FlexDirection.Column
+    flex.justifyContent = FlexJustify.Start
+    flex.alignItems = FlexAlign.Stretch
+    flex.paddingTop = 1.2
+    flex.paddingBottom = 1.2
+    flex.paddingLeft = 1.4
+    flex.paddingRight = 1.4
+    flex.onLayoutComplete.add((r) => {
+      plate.size = new vec2(r.containerWidth, r.containerHeight)
+    })
+    this.captionText = this.rowText(content, "CaptionText", w - 2.8, 9.5, "Title2")
+    this.captionText.size = this.captionSize
+    this.captionText.horizontalOverflow = HorizontalOverflow.Wrap
+    this.captionRoot.enabled = false
+  }
+
   private child(parent: SceneObject, name: string): SceneObject {
     const so = global.scene.createSceneObject(name)
     so.setParent(parent)
@@ -358,13 +400,13 @@ export class ScrewSenseUI extends BaseScriptComponent {
     this.cardRoot.enabled = visible
     // The plate resets itself to its dark default when it is first enabled: recolour it again.
     if (visible) {
-      this.colorPlate()
+      this.colorPlate(this.cardRoot)
       this.plateRecolor.reset(0.1)
     }
   }
 
-  private colorPlate(): void {
-    const rr = this.cardRoot.getComponent(RoundedRectangle.getTypeName()) as RoundedRectangle
+  private colorPlate(root: SceneObject): void {
+    const rr = root.getComponent(RoundedRectangle.getTypeName()) as RoundedRectangle
     if (!rr) return
     rr.gradient = false
     rr.backgroundColor = UI_PLATE
@@ -458,6 +500,21 @@ export class ScrewSenseUI extends BaseScriptComponent {
 
   getSliderValue(): number {
     return this.slider.knobValue
+  }
+
+  /** Show a demo caption with its centre at a world position, or hide it with `null`. */
+  showCaptionAt(text: string | null, worldPos?: vec3): void {
+    this.captionRoot.enabled = text !== null
+    if (text === null) return
+    this.captionText.text = text
+    // The plate resets itself to its dark default when first enabled: recolour it again.
+    this.colorPlate(this.captionRoot)
+    this.captionRecolor.reset(0.1)
+    if (worldPos) this.captionRoot.getParent().getTransform().setWorldPosition(worldPos)
+  }
+
+  getCaption(): string {
+    return this.captionRoot.enabled ? this.captionText.text : ""
   }
 
   showMessage(text: string | null): void {

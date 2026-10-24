@@ -558,6 +558,7 @@
       cardOffset: !<Vec3> {x: 2.000000, y: 17.000000, z: 12.000000}
       scanPos: !<Vec3> {x: -38.000000, y: 8.000000, z: 60.000000}
       sliderPos: !<Vec3> {x: 30.000000, y: 4.000000, z: 74.000000}
+      captionPos: !<Vec3> {x: -34.000000, y: 38.000000, z: -50.000000}
   ScriptTypes:
     "":
       {}
@@ -1023,6 +1024,8 @@
       backWidth: !<float> 6.000000
       scanSize: !<float> 8.000000
       sliderLength: !<float> 30.000000
+      captionSize: !<float> 120.000000
+      captionWidth: !<float> 76.000000
       uiScale: 1.600000
   ScriptTypes:
     "":
