@@ -4,6 +4,14 @@
 
 Built for [Learn AR with SPECS](https://learn-specs.devpost.com/) (Devpost × Snap). Planned with the Devpost Learn `plan-lens` skill and built by an AI coding agent through Snap's CLAD plugin, Lens Studio and the Lens Studio MCP. Runs in the Lens Studio preview; no SPECS glasses needed.
 
+[![ScrewSense in the Lens Studio preview: life-size hologram, outline tray and flat-pack panels](devpost/media/hero.jpg)](https://youtu.be/D3lge-a-3Zg)
+
+**[Watch the demo video (2:49)](https://youtu.be/D3lge-a-3Zg)**: narrated, recorded in the Lens Studio preview with a LEAF-driven simulated hand.
+
+| Right part: holes glow on the panel | Upside down: red edge and Flip | Rewind the whole assembly |
+|---|---|---|
+| ![Right match](devpost/media/right-match.jpg) | ![Flip](devpost/media/flip.jpg) | ![Rewind](devpost/media/rewind.jpg) |
+
 ## The moment
 You kneel at a low table with a flat-pack bedside table and its paper manual. Pinch **Scan** and the drawing lifts off the page and settles into a life-size hologram of the finished bedside table, right where you are going to build it. Pick up a screw you can't tell apart from the others, hold it up to the row of real-size outlines at the table's edge, and it snaps into its own outline while the holes it goes into light up on the panel in front of you.
 
@@ -26,6 +34,9 @@ You kneel at a low table with a flat-pack bedside table and its paper manual. Pi
 
 ## Design and testing
 - Design brief from the `plan-lens` interview: [`devpost/design-brief.md`](devpost/design-brief.md).
+
+![One spatial moment and why it belongs on glasses](devpost/media/design-moment.jpg)
+![Where everything lives on the table](devpost/media/design-layout.jpg)
 - Build log, decisions and test results: [`devpost/build-report.md`](devpost/build-report.md).
 - Seven done criteria, each covered by a LEAF scenario in `Assets/Leaf/`. **All seven passed in the Lens Studio preview on 24 October 2026.**
 
